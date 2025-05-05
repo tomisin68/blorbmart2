@@ -1,3 +1,4 @@
+import 'package:blorbmart2/Screens/Signup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,7 +27,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
     if (!_isFirstTimeUser) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacementNamed(context, '/signup');
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const SignupPage()),
+        );
       });
     }
   }
@@ -34,7 +38,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isFirstTimeUser', false);
-    Navigator.pushReplacementNamed(context, '/signup');
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const SignupPage()),
+    );
   }
 
   @override

@@ -1,3 +1,4 @@
+import 'package:blorbmart2/Screens/onboarding_screen.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 
@@ -34,7 +35,11 @@ class _SplashScreenState extends State<SplashScreen> {
       } else {
         timer.cancel();
         Future.delayed(const Duration(seconds: 1), () {
-          Navigator.pushReplacementNamed(context, '/onboarding');
+          // To navigate to SignupScreen
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const OnboardingScreen()),
+          );
         });
       }
     });
