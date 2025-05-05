@@ -14,6 +14,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _isFirstTimeUser = true;
+  bool _isLoading = true;
+
+  // High-quality marketplace image URL (optimized for fast loading)
+  static const String backgroundImageUrl =
+      'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2070&q=80';
 
   @override
   void initState() {
@@ -25,23 +30,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final prefs = await SharedPreferences.getInstance();
     _isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
 
-    if (!_isFirstTimeUser) {
+    if (!_isFirstTimeUser && mounted) {
+      // Using Navigator in a post-frame callback to ensure safe context usage
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const SignupPage()),
-        );
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const SignupPage()),
+          );
+        }
       });
+    }
+    if (mounted) {
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _completeOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('isFirstTimeUser', false);
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const SignupPage()),
-    );
+    if (mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const SignupPage()),
+      );
+    }
   }
 
   @override
@@ -52,8 +65,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isFirstTimeUser) {
-      return const SizedBox.shrink(); // Empty widget while redirecting
+    if (!_isFirstTimeUser || _isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(
+            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0A2463)),
+          ),
+        ),
+      );
     }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -61,15 +80,31 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            // Background Image
+            // Optimized Network Image with cache and error handling
             Positioned.fill(
-              child: Image.asset(
-                'assets/images/e-commerce.jpg',
+              child: Image.network(
+                backgroundImageUrl,
                 fit: BoxFit.cover,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return Container(
+                    color: const Color(0xFF0A2463).withOpacity(0.1),
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          Color(0xFF0A2463),
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(color: const Color(0xFF0A2463));
+                },
               ),
             ),
 
-            // Gradient Overlay
+            // Gradient Overlay for better text visibility
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -77,11 +112,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     begin: Alignment.bottomCenter,
                     end: Alignment.topCenter,
                     colors: [
-                      Colors.black.withOpacity(0.8),
+                      Colors.black.withOpacity(0.85),
                       Colors.transparent,
                       Colors.transparent,
-                      Colors.black.withOpacity(0.3),
+                      Colors.black.withOpacity(0.4),
                     ],
+                    stops: const [0.0, 0.3, 0.7, 1.0],
                   ),
                 ),
               ),
@@ -95,9 +131,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     child: PageView(
                       controller: _pageController,
                       onPageChanged: (int page) {
-                        setState(() {
-                          _currentPage = page;
-                        });
+                        setState(() => _currentPage = page);
                       },
                       children: [
                         _buildOnboardingPage(
@@ -119,21 +153,22 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
 
-                  // Page Indicator
+                  // Enhanced Page Indicator with colors
                   Padding(
                     padding: const EdgeInsets.only(bottom: 20),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: List.generate(3, (index) {
-                        return Container(
-                          width: 8,
+                        return AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          width: _currentPage == index ? 24 : 8,
                           height: 8,
                           margin: const EdgeInsets.symmetric(horizontal: 4),
                           decoration: BoxDecoration(
-                            shape: BoxShape.circle,
+                            borderRadius: BorderRadius.circular(4),
                             color:
                                 _currentPage == index
-                                    ? Colors.white
+                                    ? _getIndicatorColor(index)
                                     : Colors.white.withOpacity(0.5),
                           ),
                         );
@@ -148,15 +183,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       width: double.infinity,
                       child: ElevatedButton(
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(
-                            0xFF0A2463,
-                          ), // Matching splash screen blue
+                          backgroundColor: const Color(0xFF0A2463),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
                           elevation: 3,
+                          shadowColor: Colors.black.withOpacity(0.3),
                         ),
                         onPressed: _completeOnboarding,
                         child: const Text(
@@ -179,6 +213,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  Color _getIndicatorColor(int index) {
+    const List<Color> colors = [
+      Color(0xFF0A2463), // Primary blue
+      Color(0xFF3E92CC), // Light blue
+      Color(0xFFD8315B), // Pink/red
+    ];
+    return colors[index % colors.length];
+  }
+
   Widget _buildOnboardingPage({
     required String title,
     required String description,
@@ -197,6 +240,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               color: Colors.white,
               fontFamily: 'Poppins',
               height: 1.3,
+              shadows: [
+                Shadow(
+                  blurRadius: 6,
+                  color: Colors.black,
+                  offset: Offset(1, 1),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 20),
@@ -204,10 +254,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             description,
             style: TextStyle(
               fontSize: 16,
-              fontWeight: FontWeight.w400,
-              color: Colors.white.withOpacity(0.9),
+              fontWeight:
+                  FontWeight.w500, // Slightly bolder for better visibility
+              color: Colors.white.withOpacity(0.95), // Increased opacity
               fontFamily: 'Poppins',
-              height: 1.5,
+              height: 1.6,
+              shadows: [
+                Shadow(
+                  blurRadius: 4,
+                  color: Colors.black,
+                  offset: Offset(1, 1),
+                ),
+              ],
             ),
           ),
         ],
