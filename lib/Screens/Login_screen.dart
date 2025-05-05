@@ -145,14 +145,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 _rememberMe = value!;
                               });
                             },
-                            fillColor: MaterialStateProperty.resolveWith<Color>(
-                              (states) {
-                                if (states.contains(MaterialState.selected)) {
-                                  return Colors.orange;
-                                }
-                                return Colors.grey;
-                              },
-                            ),
+                            fillColor: WidgetStateProperty.resolveWith<Color>((
+                              states,
+                            ) {
+                              if (states.contains(WidgetState.selected)) {
+                                return Colors.orange;
+                              }
+                              return Colors.grey;
+                            }),
                           ),
                           Text(
                             'Remember me',

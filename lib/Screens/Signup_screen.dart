@@ -204,10 +204,10 @@ class _SignupPageState extends State<SignupPage> {
                               _acceptTerms = value!;
                             });
                           },
-                          fillColor: MaterialStateProperty.resolveWith<Color>((
+                          fillColor: WidgetStateProperty.resolveWith<Color>((
                             states,
                           ) {
-                            if (states.contains(MaterialState.selected)) {
+                            if (states.contains(WidgetState.selected)) {
                               return Colors.orange;
                             }
                             return Colors.grey;
