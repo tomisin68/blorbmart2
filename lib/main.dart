@@ -1,5 +1,5 @@
-import 'package:blorbmart2/Screens/home_page.dart';
 import 'package:flutter/material.dart';
+import 'package:blorbmart2/Screens/splash_screen.dart';
 // Import your home page file
 
 void main() {
@@ -17,7 +17,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const HomePage(), // This now points directly to your HomePage
+      home: SplashScreen(), // This now points directly to your HomePage
       debugShowCheckedModeBanner: false,
     );
   }

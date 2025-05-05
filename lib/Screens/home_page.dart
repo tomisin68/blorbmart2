@@ -471,8 +471,9 @@ class _HomePageState extends State<HomePage> {
                   scrollDirection: Axis.horizontal,
                   itemCount: _products.length,
                   itemBuilder: (context, index) {
-                    if (!_products[index]['sponsored'])
+                    if (!_products[index]['sponsored']) {
                       return SizedBox.shrink();
+                    }
 
                     return _buildProductCard(_products[index]);
                   },
