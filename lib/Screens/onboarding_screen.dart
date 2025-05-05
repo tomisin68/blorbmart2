@@ -14,9 +14,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
   bool _isFirstTimeUser = true;
-  bool _isLoading = true;
+  bool _isLoading = false; // Added loading state for button
 
-  // High-quality marketplace image URL (optimized for fast loading)
   static const String backgroundImageUrl =
       'https://images.unsplash.com/photo-1556740738-b6a63e27c4df?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2070&q=80';
 
@@ -31,7 +30,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _isFirstTimeUser = prefs.getBool('isFirstTimeUser') ?? true;
 
     if (!_isFirstTimeUser && mounted) {
-      // Using Navigator in a post-frame callback to ensure safe context usage
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           Navigator.pushReplacement(
@@ -42,18 +40,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       });
     }
     if (mounted) {
-      setState(() => _isLoading = false);
+      setState(() {});
     }
   }
 
   Future<void> _completeOnboarding() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isFirstTimeUser', false);
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const SignupPage()),
-      );
+    if (_isLoading) return; // Prevent multiple taps
+
+    setState(() => _isLoading = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isFirstTimeUser', false);
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const SignupPage()),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to proceed, please try again')),
+        );
+      }
     }
   }
 
@@ -65,7 +77,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isFirstTimeUser || _isLoading) {
+    if (!_isFirstTimeUser) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(
@@ -80,7 +92,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       child: Scaffold(
         body: Stack(
           children: [
-            // Optimized Network Image with cache and error handling
             Positioned.fill(
               child: Image.network(
                 backgroundImageUrl,
@@ -89,13 +100,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                   if (loadingProgress == null) return child;
                   return Container(
                     color: const Color(0xFF0A2463).withOpacity(0.1),
-                    child: const Center(
-                      child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          Color(0xFF0A2463),
-                        ),
-                      ),
-                    ),
                   );
                 },
                 errorBuilder: (context, error, stackTrace) {
@@ -104,7 +108,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
 
-            // Gradient Overlay for better text visibility
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -123,7 +126,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
             ),
 
-            // Content
             SafeArea(
               child: Column(
                 children: [
@@ -153,7 +155,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
 
-                  // Enhanced Page Indicator with colors
                   Padding(
                     padding: const EdgeInsets.only(bottom: 20),
                     child: Row(
@@ -176,7 +177,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                   ),
 
-                  // Continue Button
                   Padding(
                     padding: const EdgeInsets.all(20.0),
                     child: SizedBox(
@@ -192,15 +192,27 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                           elevation: 3,
                           shadowColor: Colors.black.withOpacity(0.3),
                         ),
-                        onPressed: _completeOnboarding,
-                        child: const Text(
-                          'Continue',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
+                        onPressed: _isLoading ? null : _completeOnboarding,
+                        child:
+                            _isLoading
+                                ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                  ),
+                                )
+                                : const Text(
+                                  'Continue',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: 'Poppins',
+                                  ),
+                                ),
                       ),
                     ),
                   ),
@@ -215,9 +227,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Color _getIndicatorColor(int index) {
     const List<Color> colors = [
-      Color(0xFF0A2463), // Primary blue
-      Color(0xFF3E92CC), // Light blue
-      Color(0xFFD8315B), // Pink/red
+      Color(0xFF0A2463),
+      Color(0xFF3E92CC),
+      Color(0xFFD8315B),
     ];
     return colors[index % colors.length];
   }
@@ -254,9 +266,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             description,
             style: TextStyle(
               fontSize: 16,
-              fontWeight:
-                  FontWeight.w500, // Slightly bolder for better visibility
-              color: Colors.white.withOpacity(0.95), // Increased opacity
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withOpacity(0.95),
               fontFamily: 'Poppins',
               height: 1.6,
               shadows: [
