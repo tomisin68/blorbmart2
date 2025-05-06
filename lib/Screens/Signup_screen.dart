@@ -466,72 +466,82 @@ class _SignupPageState extends State<SignupPage> {
   }
 
   Widget _buildTermsCheckbox() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: _acceptTerms ? Colors.orange : Colors.transparent,
-              border: Border.all(
-                color: _acceptTerms ? Colors.orange : Colors.white54,
-                width: 1.5,
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _acceptTerms = !_acceptTerms;
+        });
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: _acceptTerms ? Colors.orange : Colors.transparent,
+                border: Border.all(
+                  color: _acceptTerms ? Colors.orange : Colors.white54,
+                  width: 1.5,
+                ),
+                borderRadius: BorderRadius.circular(6),
               ),
-              borderRadius: BorderRadius.circular(6),
+              child:
+                  _acceptTerms
+                      ? const Icon(Icons.check, size: 16, color: Colors.white)
+                      : null,
             ),
-            child:
-                _acceptTerms
-                    ? const Icon(Icons.check, size: 16, color: Colors.white)
-                    : null,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: RichText(
-              text: TextSpan(
-                text: 'I agree to the ',
-                style: GoogleFonts.poppins(color: Colors.white70, fontSize: 14),
-                children: [
-                  TextSpan(
-                    text: 'Terms & Conditions',
-                    style: GoogleFonts.poppins(
-                      color: Colors.orange,
-                      decoration: TextDecoration.underline,
-                    ),
-                    recognizer:
-                        TapGestureRecognizer()
-                          ..onTap =
-                              () => _showTermsDialog(
-                                'Terms & Conditions',
-                                'https://yourwebsite.com/terms',
-                              ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: RichText(
+                text: TextSpan(
+                  text: 'I agree to the ',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white70,
+                    fontSize: 14,
                   ),
-                  const TextSpan(text: ' and '),
-                  TextSpan(
-                    text: 'Privacy Policy',
-                    style: GoogleFonts.poppins(
-                      color: Colors.orange,
-                      decoration: TextDecoration.underline,
+                  children: [
+                    TextSpan(
+                      text: 'Terms & Conditions',
+                      style: GoogleFonts.poppins(
+                        color: Colors.orange,
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer:
+                          TapGestureRecognizer()
+                            ..onTap =
+                                () => _showTermsDialog(
+                                  'Terms & Conditions',
+                                  'https://yourwebsite.com/terms',
+                                ),
                     ),
-                    recognizer:
-                        TapGestureRecognizer()
-                          ..onTap =
-                              () => _showTermsDialog(
-                                'Privacy Policy',
-                                'https://yourwebsite.com/privacy',
-                              ),
-                  ),
-                ],
+                    const TextSpan(text: ' and '),
+                    TextSpan(
+                      text: 'Privacy Policy',
+                      style: GoogleFonts.poppins(
+                        color: Colors.orange,
+                        decoration: TextDecoration.underline,
+                      ),
+                      recognizer:
+                          TapGestureRecognizer()
+                            ..onTap =
+                                () => _showTermsDialog(
+                                  'Privacy Policy',
+                                  'https://yourwebsite.com/privacy',
+                                ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
