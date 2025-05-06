@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "323656404685",
+    "project_id": "blorbmart2",
+    "storage_bucket": "blorbmart2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:323656404685:android:d3896b80b073e0a0b0e384",
+        "android_client_info": {
+          "package_name": "com.example.blorbmart2"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCtD0NcnbTWNSz8zPTupx3c-8DEdgMmo3w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

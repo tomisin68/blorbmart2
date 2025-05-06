@@ -1,11 +1,16 @@
 import 'package:blorbmart2/Screens/Login_screen.dart';
+import 'package:blorbmart2/Screens/home_page.dart'; // Adjust path as needed
+import 'package:blorbmart2/auth_services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:blorbmart2/Screens/home_page.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class SignupPage extends StatefulWidget {
@@ -20,6 +25,7 @@ class _SignupPageState extends State<SignupPage> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _acceptTerms = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
@@ -61,47 +67,75 @@ class _SignupPageState extends State<SignupPage> {
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_acceptTerms) {
-      _showErrorSnackBar('Please accept terms and conditions');
+      _showErrorToast('Please accept terms and conditions');
       return;
     }
     if (!_isPasswordValid) {
-      _showErrorSnackBar('Please ensure your password meets all requirements');
+      _showErrorToast('Please ensure your password meets all requirements');
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // Simulate network call with shimmer effect
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final String email = _emailController.text.trim();
+      final String password = _passwordController.text;
 
-    // Save to SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('email', _emailController.text);
+      await authService.value.createUserWithEmailAndPassword(email, password);
 
-    setState(() => _isLoading = false);
+      final User? user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await user.updateProfile(displayName: _nameController.text);
 
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const HomePage(),
-          transitionsBuilder:
-              (_, a, __, c) => FadeTransition(opacity: a, child: c),
-          transitionDuration: const Duration(milliseconds: 500),
-        ),
-      );
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+          'name': _nameController.text,
+          'email': email,
+          'uid': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('email', email);
+
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const HomePage(),
+              transitionsBuilder:
+                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
+              transitionDuration: const Duration(milliseconds: 500),
+            ),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'An unknown error occurred.';
+      if (e.code == 'email-already-in-use') {
+        message = 'This email is already in use.';
+      } else if (e.code == 'invalid-email') {
+        message = 'Invalid email address.';
+      } else if (e.code == 'operation-not-allowed') {
+        message = 'Email/password accounts are not enabled.';
+      } else if (e.code == 'weak-password') {
+        message = 'Password is too weak.';
+      }
+      _showErrorToast(message);
+    } catch (e) {
+      _showErrorToast('Failed to sign up. Please try again.');
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: Colors.redAccent,
-        elevation: 10,
-      ),
+  void _showErrorToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+      fontSize: 16.0,
     );
   }
 
@@ -116,7 +150,6 @@ class _SignupPageState extends State<SignupPage> {
     if (kIsWeb) {
       _launchUrl(url);
     } else {
-      // Mobile implementation with WebView
       showDialog(
         context: context,
         builder:
@@ -194,7 +227,6 @@ class _SignupPageState extends State<SignupPage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Spacer(flex: 1),
-                      // Logo/Title with animation
                       AnimatedScale(
                         scale: _isLoading ? 0.95 : 1.0,
                         duration: const Duration(milliseconds: 300),
@@ -219,8 +251,6 @@ class _SignupPageState extends State<SignupPage> {
                         ),
                       ),
                       const SizedBox(height: 40),
-
-                      // Name Field
                       _buildStyledTextField(
                         controller: _nameController,
                         label: 'Full Name',
@@ -233,8 +263,6 @@ class _SignupPageState extends State<SignupPage> {
                         },
                       ),
                       const SizedBox(height: 20),
-
-                      // Email Field
                       _buildStyledTextField(
                         controller: _emailController,
                         label: 'Email',
@@ -252,8 +280,6 @@ class _SignupPageState extends State<SignupPage> {
                         },
                       ),
                       const SizedBox(height: 20),
-
-                      // Password Field with strength indicator
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -263,32 +289,22 @@ class _SignupPageState extends State<SignupPage> {
                         ],
                       ),
                       const SizedBox(height: 24),
-
-                      // Terms Checkbox
                       _buildTermsCheckbox(),
                       const SizedBox(height: 30),
-
-                      // Sign Up Button
                       _buildGradientButton(
                         onPressed: _signUp,
                         text: 'Sign Up',
                         isLoading: _isLoading,
                       ),
                       const SizedBox(height: 20),
-
-                      // Or divider
                       _buildOrDivider(),
                       const SizedBox(height: 20),
-
-                      // Google Sign In
                       _buildSocialButton(
                         icon: Icons.g_mobiledata,
                         text: 'Continue with Google',
                         onPressed: () {},
                       ),
                       const SizedBox(height: 20),
-
-                      // Already have account
                       TextButton(
                         onPressed: () {
                           Navigator.push(
@@ -685,12 +701,4 @@ class _SignupPageState extends State<SignupPage> {
       ),
     );
   }
-}
-
-class SurfaceAndroidWebView {
-  // Placeholder for SurfaceAndroidWebView implementation
-
-  // This is just a stub to avoid errors in the code.
-
-  // In a real application, you would implement the necessary methods here.
 }

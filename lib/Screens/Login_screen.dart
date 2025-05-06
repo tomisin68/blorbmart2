@@ -1,8 +1,13 @@
+import 'package:blorbmart2/Screens/Signup_screen.dart';
+import 'package:blorbmart2/Screens/home_page.dart'; // Make sure this is correct
+import 'package:blorbmart2/auth_services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:blorbmart2/Screens/Signup_screen.dart';
-import 'package:blorbmart2/Screens/home_page.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -15,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _isLoading = false;
   bool _rememberMe = false;
   bool _obscurePassword = true;
@@ -41,47 +47,56 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() => _isLoading = true);
 
-    // Simulate network call with shimmer effect
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final String email = _emailController.text.trim();
+      final String password = _passwordController.text;
 
-    // Save credentials if remember me is checked
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('savedEmail', _emailController.text);
-      await prefs.setString('savedPassword', _passwordController.text);
-      await prefs.setBool('rememberMe', true);
-    } else {
-      await prefs.remove('savedEmail');
-      await prefs.remove('savedPassword');
-      await prefs.setBool('rememberMe', false);
-    }
+      await authService.value.signInWithEmailAndPassword(email, password);
 
-    setState(() => _isLoading = false);
+      final User? user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('email', email);
 
-    // Navigate to home page with smooth transition
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const HomePage(),
-          transitionsBuilder:
-              (_, a, __, c) => FadeTransition(opacity: a, child: c),
-          transitionDuration: const Duration(milliseconds: 500),
-        ),
-      );
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const HomePage(),
+              transitionsBuilder:
+                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
+              transitionDuration: const Duration(milliseconds: 500),
+            ),
+          );
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      String message = 'An unknown error occurred.';
+      if (e.code == 'invalid-email') {
+        message = 'Invalid email address.';
+      } else if (e.code == 'user-disabled') {
+        message = 'This user has been disabled.';
+      } else if (e.code == 'user-not-found') {
+        message = 'No user found for that email.';
+      } else if (e.code == 'wrong-password') {
+        message = 'Incorrect password.';
+      }
+      _showErrorToast(message);
+    } catch (e) {
+      _showErrorToast('Failed to log in. Please try again.');
+    } finally {
+      setState(() => _isLoading = false);
     }
   }
 
-  // ignore: unused_element
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        backgroundColor: Colors.redAccent,
-        elevation: 10,
-      ),
+  void _showErrorToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+      fontSize: 16.0,
     );
   }
 
@@ -107,7 +122,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       const Spacer(flex: 1),
-                      // Logo/Title with animation
                       AnimatedScale(
                         scale: _isLoading ? 0.95 : 1.0,
                         duration: const Duration(milliseconds: 300),
@@ -140,8 +154,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 40),
-
-                      // Email Field
                       _buildStyledTextField(
                         controller: _emailController,
                         label: 'Email',
@@ -159,32 +171,20 @@ class _LoginScreenState extends State<LoginScreen> {
                         },
                       ),
                       const SizedBox(height: 20),
-
-                      // Password Field
                       _buildPasswordField(),
                       const SizedBox(height: 10),
-
-                      // Remember Me & Forgot Password
                       _buildRememberMeRow(),
                       const SizedBox(height: 30),
-
-                      // Login Button
                       _buildGradientButton(
                         onPressed: _login,
                         text: 'Login',
                         isLoading: _isLoading,
                       ),
                       const SizedBox(height: 30),
-
-                      // Don't have account
                       _buildSignUpPrompt(),
                       const SizedBox(height: 20),
-
-                      // Or divider
                       _buildOrDivider(),
                       const SizedBox(height: 20),
-
-                      // Google Sign In
                       _buildSocialButton(
                         icon: Icons.g_mobiledata,
                         text: 'Continue with Google',
@@ -260,7 +260,6 @@ class _LoginScreenState extends State<LoginScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // Remember Me Checkbox
         GestureDetector(
           onTap: () {
             setState(() {
@@ -294,7 +293,6 @@ class _LoginScreenState extends State<LoginScreen> {
             ],
           ),
         ),
-        // Forgot Password
         TextButton(
           onPressed: () {
             // Navigate to forgot password screen

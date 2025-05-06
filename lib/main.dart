@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:blorbmart2/Screens/splash_screen.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 // Import your home page file
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    demoProjectId: "blorbmart2",
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(const MyApp());
 }
 
