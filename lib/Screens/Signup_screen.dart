@@ -1,5 +1,6 @@
 import 'package:blorbmart2/Screens/Login_screen.dart';
-import 'package:blorbmart2/Screens/home_page.dart'; // Adjust path as needed
+import 'package:blorbmart2/Screens/home_page.dart';
+// ignore: unused_import
 import 'package:blorbmart2/auth_services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -29,6 +30,7 @@ class _SignupPageState extends State<SignupPage> {
   bool _acceptTerms = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _isUserLoggedIn = false;
 
   // Password validation flags
   bool _hasMinLength = false;
@@ -40,6 +42,26 @@ class _SignupPageState extends State<SignupPage> {
   void initState() {
     super.initState();
     _passwordController.addListener(_validatePassword);
+    _checkCurrentUser();
+  }
+
+  Future<void> _checkCurrentUser() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null && mounted) {
+      setState(() => _isUserLoggedIn = true);
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HomePage(),
+            transitionsBuilder:
+                (_, a, __, c) => FadeTransition(opacity: a, child: c),
+            transitionDuration: const Duration(milliseconds: 500),
+          ),
+        );
+      }
+    }
   }
 
   void _validatePassword() {
@@ -80,39 +102,69 @@ class _SignupPageState extends State<SignupPage> {
     try {
       final String email = _emailController.text.trim();
       final String password = _passwordController.text;
+      final String name = _nameController.text.trim();
 
-      await authService.value.createUserWithEmailAndPassword(email, password);
-
-      final User? user = FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await user.updateProfile(displayName: _nameController.text);
-
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'name': _nameController.text,
-          'email': email,
-          'uid': user.uid,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('email', email);
-
+      // Check if email already exists first
+      final auth = FirebaseAuth.instance;
+      final methods = await auth.fetchSignInMethodsForEmail(email);
+      if (methods.isNotEmpty) {
+        _showErrorToast('This email is already registered');
         if (mounted) {
           Navigator.pushReplacement(
             context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const HomePage(),
-              transitionsBuilder:
-                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
-              transitionDuration: const Duration(milliseconds: 500),
-            ),
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
           );
         }
+        return;
+      }
+
+      // Create user account
+      final userCredential = await auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      // Update user profile
+      await userCredential.user?.updateProfile(displayName: name);
+
+      // Store user data in Firestore
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userCredential.user?.uid)
+          .set({
+            'name': name,
+            'email': email,
+            'uid': userCredential.user?.uid,
+            'createdAt': FieldValue.serverTimestamp(),
+            'lastLogin': FieldValue.serverTimestamp(),
+          });
+
+      // Store email in shared preferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('email', email);
+
+      // Navigate to home page
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HomePage(),
+            transitionsBuilder:
+                (_, a, __, c) => FadeTransition(opacity: a, child: c),
+            transitionDuration: const Duration(milliseconds: 500),
+          ),
+        );
       }
     } on FirebaseAuthException catch (e) {
       String message = 'An unknown error occurred.';
       if (e.code == 'email-already-in-use') {
-        message = 'This email is already in use.';
+        message = 'This email is already in use. Please login instead.';
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+        }
       } else if (e.code == 'invalid-email') {
         message = 'Invalid email address.';
       } else if (e.code == 'operation-not-allowed') {
@@ -124,7 +176,9 @@ class _SignupPageState extends State<SignupPage> {
     } catch (e) {
       _showErrorToast('Failed to sign up. Please try again.');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -207,6 +261,10 @@ class _SignupPageState extends State<SignupPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isUserLoggedIn) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
       body: SafeArea(
@@ -307,7 +365,7 @@ class _SignupPageState extends State<SignupPage> {
                       const SizedBox(height: 20),
                       TextButton(
                         onPressed: () {
-                          Navigator.push(
+                          Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
                               builder: (context) => const LoginScreen(),
