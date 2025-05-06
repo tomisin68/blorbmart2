@@ -1,10 +1,8 @@
 import 'package:blorbmart2/Screens/Signup_screen.dart';
-import 'package:blorbmart2/Screens/home_page.dart'; // Make sure this is correct
+import 'package:blorbmart2/Screens/home_page.dart';
 import 'package:blorbmart2/auth_services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -89,12 +87,56 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
+      _showErrorToast('Please enter your email address first');
+      return;
+    }
+
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email)) {
+      _showErrorToast('Please enter a valid email address');
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      _showSuccessToast('Password reset link sent to $email');
+    } on FirebaseAuthException catch (e) {
+      String message = 'Failed to send reset link. Please try again.';
+      if (e.code == 'user-not-found') {
+        message = 'No user found with this email address.';
+      } else if (e.code == 'invalid-email') {
+        message = 'The email address is invalid.';
+      }
+      _showErrorToast(message);
+    } catch (e) {
+      _showErrorToast('An error occurred. Please try again.');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
   void _showErrorToast(String message) {
     Fluttertoast.showToast(
       msg: message,
       toastLength: Toast.LENGTH_LONG,
       gravity: ToastGravity.TOP,
       backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+      fontSize: 16.0,
+    );
+  }
+
+  void _showSuccessToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.green,
       textColor: Colors.white,
       fontSize: 16.0,
     );
@@ -294,9 +336,7 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         TextButton(
-          onPressed: () {
-            // Navigate to forgot password screen
-          },
+          onPressed: _isLoading ? null : _resetPassword,
           style: TextButton.styleFrom(
             padding: EdgeInsets.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,

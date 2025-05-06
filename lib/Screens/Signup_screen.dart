@@ -1,13 +1,11 @@
 import 'package:blorbmart2/Screens/Login_screen.dart';
 import 'package:blorbmart2/Screens/home_page.dart';
-// ignore: unused_import
-import 'package:blorbmart2/auth_services.dart';
+import 'package:blorbmart2/Screens/verify_email_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -51,15 +49,27 @@ class _SignupPageState extends State<SignupPage> {
       setState(() => _isUserLoggedIn = true);
       await Future.delayed(const Duration(milliseconds: 300));
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const HomePage(),
-            transitionsBuilder:
-                (_, a, __, c) => FadeTransition(opacity: a, child: c),
-            transitionDuration: const Duration(milliseconds: 500),
-          ),
-        );
+        if (user.emailVerified) {
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => const HomePage(),
+              transitionsBuilder:
+                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
+              transitionDuration: const Duration(milliseconds: 500),
+            ),
+          );
+        } else {
+          Navigator.pushReplacement(
+            context,
+            PageRouteBuilder(
+              pageBuilder: (_, __, ___) => VerifyEmailPage(user: user),
+              transitionsBuilder:
+                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
+              transitionDuration: const Duration(milliseconds: 500),
+            ),
+          );
+        }
       }
     }
   }
@@ -127,7 +137,10 @@ class _SignupPageState extends State<SignupPage> {
       // Update user profile
       await userCredential.user?.updateProfile(displayName: name);
 
-      // Store user data in Firestore
+      // Send email verification
+      await userCredential.user?.sendEmailVerification();
+
+      // Store user data in Firestore (but mark as unverified)
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userCredential.user?.uid)
@@ -135,6 +148,7 @@ class _SignupPageState extends State<SignupPage> {
             'name': name,
             'email': email,
             'uid': userCredential.user?.uid,
+            'emailVerified': false,
             'createdAt': FieldValue.serverTimestamp(),
             'lastLogin': FieldValue.serverTimestamp(),
           });
@@ -143,12 +157,13 @@ class _SignupPageState extends State<SignupPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('email', email);
 
-      // Navigate to home page
+      // Navigate to verification page
       if (mounted) {
         Navigator.pushReplacement(
           context,
           PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const HomePage(),
+            pageBuilder:
+                (_, __, ___) => VerifyEmailPage(user: userCredential.user!),
             transitionsBuilder:
                 (_, a, __, c) => FadeTransition(opacity: a, child: c),
             transitionDuration: const Duration(milliseconds: 500),
@@ -175,6 +190,9 @@ class _SignupPageState extends State<SignupPage> {
       _showErrorToast(message);
     } catch (e) {
       _showErrorToast('Failed to sign up. Please try again.');
+      if (kDebugMode) {
+        print('Signup error: $e');
+      }
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);

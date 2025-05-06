@@ -17,7 +17,7 @@ class AuthService {
         password: password,
       );
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -31,7 +31,7 @@ class AuthService {
         password: password,
       );
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -39,7 +39,7 @@ class AuthService {
     try {
       await firebaseAuth.signOut();
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -47,7 +47,7 @@ class AuthService {
     try {
       await firebaseAuth.sendPasswordResetEmail(email: email);
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -59,7 +59,7 @@ class AuthService {
         newPassword: newPassword,
       );
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -71,7 +71,7 @@ class AuthService {
         await user.reload(); // Reload the user to get the updated info
       }
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -82,7 +82,7 @@ class AuthService {
         await user.delete();
       }
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -93,7 +93,7 @@ class AuthService {
         await user.sendEmailVerification();
       }
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -104,7 +104,7 @@ class AuthService {
         await user.updatePassword(newPassword);
       }
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 
@@ -115,7 +115,7 @@ class AuthService {
         await user.updateEmail(newEmail);
       }
     } catch (e) {
-      throw e; // Handle error appropriately in your app
+      rethrow; // Handle error appropriately in your app
     }
   }
 }
