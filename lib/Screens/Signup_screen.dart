@@ -3,9 +3,10 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'package:flutter/foundation.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:blorbmart2/Screens/home_page.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -32,9 +33,6 @@ class _SignupPageState extends State<SignupPage> {
   @override
   void initState() {
     super.initState();
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      WebViewPlatform.instance = SurfaceAndroidWebView() as WebViewPlatform?;
-    }
     _passwordController.addListener(_validatePassword);
   }
 
@@ -107,59 +105,71 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
+  Future<void> _launchUrl(String url) async {
+    final Uri uri = Uri.parse(url);
+    if (!await launchUrl(uri)) {
+      throw Exception('Could not launch $url');
+    }
+  }
+
   void _showTermsDialog(String title, String url) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            backgroundColor: Colors.transparent,
-            insetPadding: const EdgeInsets.all(20),
-            child: Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFF0A1E3D),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.orange, width: 2),
-              ),
-              height: MediaQuery.of(context).size.height * 0.8,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          title,
-                          style: GoogleFonts.poppins(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+    if (kIsWeb) {
+      _launchUrl(url);
+    } else {
+      // Mobile implementation with WebView
+      showDialog(
+        context: context,
+        builder:
+            (context) => Dialog(
+              backgroundColor: Colors.transparent,
+              insetPadding: const EdgeInsets.all(20),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0A1E3D),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.orange, width: 2),
+                ),
+                height: MediaQuery.of(context).size.height * 0.8,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            title,
+                            style: GoogleFonts.poppins(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: WebViewWidget(
-                        controller:
-                            WebViewController()
-                              ..setJavaScriptMode(JavaScriptMode.unrestricted)
-                              ..setBackgroundColor(const Color(0xFF0A1E3D))
-                              ..loadRequest(Uri.parse(url)),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: WebViewWidget(
+                          controller:
+                              WebViewController()
+                                ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                                ..setBackgroundColor(const Color(0xFF0A1E3D))
+                                ..loadRequest(Uri.parse(url)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-    );
+      );
+    }
   }
 
   @override
