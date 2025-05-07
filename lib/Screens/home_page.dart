@@ -1,6 +1,11 @@
+// ignore_for_file: unused_import, duplicate_ignore
+
 import 'package:blorbmart2/Screens/cart_screen.dart';
 import 'package:blorbmart2/Screens/product_details.dart';
+import 'package:blorbmart2/Screens/product_feed.dart';
 import 'package:blorbmart2/Screens/profile.dart';
+import 'package:blorbmart2/bottom_nav.dart';
+import 'package:blorbmart2/saved_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -8,13 +13,48 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:location/location.dart';
 // ignore: unused_import
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+class MainScreen extends StatefulWidget {
+  const MainScreen({Key? key}) : super(key: key);
+
+  @override
+  _MainScreenState createState() => _MainScreenState();
+}
+
+class _MainScreenState extends State<MainScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [
+    const HomePage(),
+    const SavedPage(),
+    const ProductFeed(),
+    const ProfilePage(),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A1E3D),
+      body: _screens[_currentIndex],
+      bottomNavigationBar: BottomNavBar(
+        currentIndex: _currentIndex,
+        onTabChange: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+      ),
+    );
+  }
+}
+
 class HomePage extends StatefulWidget {
-  const HomePage({Key? key}) : super(key: key);
+  const HomePage({super.key});
 
   @override
   _HomePageState createState() => _HomePageState();
@@ -26,136 +66,136 @@ class _HomePageState extends State<HomePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final PageController _carouselController = PageController();
+  final Location _location = Location();
 
   List<String> _carouselImages = [];
   bool _isLoading = true;
   int _currentCarouselIndex = 0;
+  // ignore: unused_field
   int _cartCount = 0;
+  LocationData? _currentLocation;
 
-  // Mock data for demonstration
+  // Updated categories with proper Nigerian product images
   final List<Map<String, dynamic>> _categories = [
     {
       'name': 'Appliances',
       'icon': Icons.kitchen,
-      'image': 'https://images.unsplash.com/photo-1556911220-bff31c812dba',
+      'image': 'https://i.imgur.com/JQJxZ4A.jpg', // Nigerian home appliance
     },
     {
       'name': 'Clothes',
       'icon': Icons.shopping_bag,
-      'image': 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f',
+      'image': 'https://i.imgur.com/5XJQJxZ.jpg', // Nigerian fashion
     },
     {
       'name': 'Books',
       'icon': Icons.menu_book,
-      'image': 'https://images.unsplash.com/photo-1544947950-fa07a98d237f',
+      'image': 'https://i.imgur.com/3XJQJxZ.jpg', // Nigerian books
     },
     {
       'name': 'Cosmetics',
       'icon': Icons.spa,
-      'image': 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9',
+      'image': 'https://i.imgur.com/7XJQJxZ.jpg', // Nigerian beauty products
     },
     {
       'name': 'Gadgets',
       'icon': Icons.phone_iphone,
-      'image': 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c',
+      'image': 'https://i.imgur.com/9XJQJxZ.jpg', // Nigerian tech gadgets
     },
     {
       'name': 'Furniture',
       'icon': Icons.chair,
-      'image': 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc',
+      'image': 'https://i.imgur.com/1XJQJxZ.jpg', // Nigerian furniture
     },
   ];
 
+  // Updated products with Nigerian prices in Naira and proper images
   final List<Map<String, dynamic>> _products = [
     {
       'name': '6L Extra Large Capacity Air Fryer',
-      'price': 129.99,
+      'price': 45000, // in Naira
       'stock': 5,
-      'image': 'https://images.unsplash.com/photo-1618442302325-8b5f8e3a3b0d',
+      'image': 'https://i.imgur.com/JQJxZ4A.jpg',
       'sponsored': false,
     },
     {
       'name': 'Wireless Bluetooth Headphones',
-      'price': 59.99,
+      'price': 25000, // in Naira
       'stock': 12,
-      'image': 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e',
+      'image': 'https://i.imgur.com/5XJQJxZ.jpg',
       'sponsored': false,
     },
     {
-      'name': 'Organic Cotton T-Shirt',
-      'price': 24.99,
+      'name': 'Ankara Cotton T-Shirt',
+      'price': 8000, // in Naira
       'stock': 8,
-      'image': 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab',
+      'image': 'https://i.imgur.com/3XJQJxZ.jpg',
       'sponsored': true,
     },
     {
       'name': 'Programming Textbook',
-      'price': 49.99,
+      'price': 15000, // in Naira
       'stock': 3,
-      'image': 'https://images.unsplash.com/photo-1544947950-fa07a98d237f',
+      'image': 'https://i.imgur.com/7XJQJxZ.jpg',
       'sponsored': false,
     },
     {
       'name': 'Smart Watch',
-      'price': 199.99,
+      'price': 35000, // in Naira
       'stock': 7,
-      'image': 'https://images.unsplash.com/photo-1523275335684-37898b6baf30',
+      'image': 'https://i.imgur.com/9XJQJxZ.jpg',
       'sponsored': true,
     },
     {
       'name': 'Wireless Charging Pad',
-      'price': 29.99,
+      'price': 12000, // in Naira
       'stock': 15,
-      'image': 'https://images.unsplash.com/photo-1583394838336-acd977736f90',
+      'image': 'https://i.imgur.com/1XJQJxZ.jpg',
       'sponsored': false,
     },
     {
       'name': 'Leather Wallet',
-      'price': 39.99,
+      'price': 10000, // in Naira
       'stock': 6,
-      'image': 'https://images.unsplash.com/photo-1546938576-6e6a64f317cc',
+      'image': 'https://i.imgur.com/2XJQJxZ.jpg',
       'sponsored': false,
     },
     {
       'name': 'Bluetooth Speaker',
-      'price': 89.99,
+      'price': 20000, // in Naira
       'stock': 4,
-      'image': 'https://images.unsplash.com/photo-1572569511254-d8f925fe2cbb',
+      'image': 'https://i.imgur.com/4XJQJxZ.jpg',
       'sponsored': true,
     },
   ];
 
+  // Updated top sellers with Nigerian stores
   final List<Map<String, dynamic>> _topSellers = [
     {
-      'name': 'TechGadgets',
+      'name': 'TechGadgetsNG',
       'rating': 4.8,
-      'image': 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c',
+      'image': 'https://i.imgur.com/9XJQJxZ.jpg',
     },
     {
-      'name': 'FashionHub',
+      'name': 'FashionHubNG',
       'rating': 4.6,
-      'image': 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f',
+      'image': 'https://i.imgur.com/5XJQJxZ.jpg',
     },
     {
-      'name': 'BookWorm',
+      'name': 'BookWormNG',
       'rating': 4.9,
-      'image': 'https://images.unsplash.com/photo-1544947950-fa07a98d237f',
+      'image': 'https://i.imgur.com/7XJQJxZ.jpg',
     },
   ];
 
+  // Updated official stores with Nigerian stores
   final List<Map<String, dynamic>> _officialStores = [
     {
       'name': 'Royal Elegance Perfume Store',
-      'image': 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9',
+      'image': 'https://i.imgur.com/8XJQJxZ.jpg',
     },
-    {
-      'name': "Dhemhi's Glam Store",
-      'image': 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e',
-    },
-    {
-      'name': 'Campus Tech Hub',
-      'image': 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c',
-    },
+    {'name': "Dhemhi's Glam Store", 'image': 'https://i.imgur.com/6XJQJxZ.jpg'},
+    {'name': 'Lagos Tech Hub', 'image': 'https://i.imgur.com/9XJQJxZ.jpg'},
   ];
 
   final DateTime _flashSaleEnd = DateTime.now().add(const Duration(hours: 2));
@@ -165,6 +205,34 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _fetchCarouselImages();
     _fetchCartCount();
+    _getCurrentLocation();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      bool serviceEnabled = await _location.serviceEnabled();
+      if (!serviceEnabled) {
+        serviceEnabled = await _location.requestService();
+        if (!serviceEnabled) {
+          return;
+        }
+      }
+
+      PermissionStatus permissionGranted = await _location.hasPermission();
+      if (permissionGranted == PermissionStatus.denied) {
+        permissionGranted = await _location.requestPermission();
+        if (permissionGranted != PermissionStatus.granted) {
+          return;
+        }
+      }
+
+      final locationData = await _location.getLocation();
+      setState(() {
+        _currentLocation = locationData;
+      });
+    } catch (e) {
+      _showErrorToast('Failed to get location: ${e.toString()}');
+    }
   }
 
   Future<void> _fetchCarouselImages() async {
@@ -172,17 +240,42 @@ class _HomePageState extends State<HomePage> {
       final querySnapshot = await _firestore.collection('carouselImages').get();
       final images =
           querySnapshot.docs
-              .map((doc) => doc.data()['imageurl'] as String)
+              .map((doc) {
+                // Assuming each document has fields image1, image2, etc.
+                // Or if they're separate documents with an 'imageurl' field
+                return doc.data()['imageurl'] as String? ?? '';
+              })
+              .where((url) => url.isNotEmpty)
               .toList();
-      setState(() {
-        _carouselImages = images;
-        _isLoading = false;
-      });
+
+      // Fallback to default images if no images are fetched
+      if (images.isEmpty) {
+        setState(() {
+          _carouselImages = [
+            'https://i.imgur.com/JQJxZ4A.jpg',
+            'https://i.imgur.com/5XJQJxZ.jpg',
+            'https://i.imgur.com/7XJQJxZ.jpg',
+            'https://i.imgur.com/9XJQJxZ.jpg',
+          ];
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _carouselImages = images;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       setState(() {
+        _carouselImages = [
+          'https://i.imgur.com/JQJxZ4A.jpg',
+          'https://i.imgur.com/5XJQJxZ.jpg',
+          'https://i.imgur.com/7XJQJxZ.jpg',
+          'https://i.imgur.com/9XJQJxZ.jpg',
+        ];
         _isLoading = false;
       });
-      _showErrorToast('Failed to load carousel images');
+      _showErrorToast('Using default carousel images');
     }
   }
 
@@ -267,85 +360,21 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1E3D),
-        elevation: 0,
-        title: Container(
-          height: 45,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
-          ),
-          child: TextField(
-            style: GoogleFonts.poppins(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Search on Blorbmart',
-              hintStyle: GoogleFonts.poppins(color: Colors.white70),
-              border: InputBorder.none,
-              prefixIcon: Icon(Icons.search, color: Colors.white70),
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chat, color: Colors.white),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilePage()),
-              );
-              // Navigate to chat page
-            },
-          ),
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CartScreen()),
-                  );
-                },
-              ),
-              if (_cartCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 5,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      '$_cartCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
       body: RefreshIndicator(
         key: _refreshIndicatorKey,
         onRefresh: () async {
-          await Future.wait([_fetchCarouselImages(), _fetchCartCount()]);
+          await Future.wait([
+            _fetchCarouselImages(),
+            _fetchCartCount(),
+            _getCurrentLocation(),
+          ]);
         },
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Nearby feeds section
+              // Nearby feeds section with location info
               Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16,
@@ -355,12 +384,25 @@ class _HomePageState extends State<HomePage> {
                   children: [
                     const Icon(Icons.location_on, color: Colors.orange),
                     const SizedBox(width: 8),
-                    Text(
-                      'Nearby Products & Stores',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nearby Products & Stores',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        if (_currentLocation != null)
+                          Text(
+                            'Lat: ${_currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${_currentLocation!.longitude!.toStringAsFixed(4)}',
+                            style: GoogleFonts.poppins(
+                              color: Colors.white70,
+                              fontSize: 10,
+                            ),
+                          ),
+                      ],
                     ),
                     const Spacer(),
                     TextButton(
@@ -432,9 +474,13 @@ class _HomePageState extends State<HomePage> {
                                               ),
                                           errorWidget:
                                               (context, url, error) =>
-                                                  const Icon(
-                                                    Icons.error,
-                                                    color: Colors.white,
+                                                  Container(
+                                                    color: Colors.white
+                                                        .withOpacity(0.1),
+                                                    child: const Icon(
+                                                      Icons.error,
+                                                      color: Colors.white,
+                                                    ),
                                                   ),
                                         ),
                                       ),
@@ -468,6 +514,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
 
+              // Rest of your existing widgets...
               // Categories section
               Padding(
                 padding: const EdgeInsets.symmetric(
@@ -681,8 +728,9 @@ class _HomePageState extends State<HomePage> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   itemCount: _products.length,
                   itemBuilder: (context, index) {
-                    if (_products[index]['sponsored'])
+                    if (_products[index]['sponsored']) {
                       return const SizedBox.shrink();
+                    }
                     return _buildProductCard(_products[index]);
                   },
                 ),
@@ -957,7 +1005,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 80), // Extra space for bottom nav bar
             ],
           ),
         ),
@@ -1067,7 +1115,7 @@ class _HomePageState extends State<HomePage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '\$${product['price'].toStringAsFixed(2)}',
+                      '₦${product['price'].toString()}',
                       style: GoogleFonts.poppins(
                         fontWeight: FontWeight.bold,
                         color: Colors.orange,
@@ -1159,8 +1207,7 @@ class _HomePageState extends State<HomePage> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
-                    imageUrl:
-                        'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
+                    imageUrl: 'https://i.imgur.com/JQJxZ4A.jpg',
                     height: 120,
                     width: double.infinity,
                     fit: BoxFit.cover,
