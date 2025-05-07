@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:blorbmart2/Screens/home_page.dart';
 import 'package:blorbmart2/Screens/Login_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -14,30 +16,81 @@ class VerifyEmailPage extends StatefulWidget {
 }
 
 class _VerifyEmailPageState extends State<VerifyEmailPage> {
-  // ignore: unused_field
-  final bool _isLoading = false;
   bool _isResending = false;
   bool _isVerified = false;
+  bool _isChecking = false;
+  bool _showVerifiedMessage = false;
+  Timer? _verificationCheckTimer;
 
   @override
   void initState() {
     super.initState();
-    _checkEmailVerified();
-    widget.user.sendEmailVerification();
+    _startEmailVerificationProcess();
+  }
+
+  @override
+  void dispose() {
+    _verificationCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _startEmailVerificationProcess() async {
+    // Initial check
+    await _checkEmailVerified();
+
+    // Send verification email if not already verified
+    if (!_isVerified) {
+      await widget.user.sendEmailVerification();
+      _showSuccessToast('Verification email sent to ${widget.user.email}');
+    }
+
+    // Start periodic checking
+    _startVerificationCheckTimer();
+  }
+
+  void _startVerificationCheckTimer() {
+    _verificationCheckTimer = Timer.periodic(const Duration(seconds: 3), (
+      timer,
+    ) async {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      await _checkEmailVerified();
+    });
   }
 
   Future<void> _checkEmailVerified() async {
-    await widget.user.reload();
-    if (widget.user.emailVerified && mounted) {
-      setState(() {
-        _isVerified = true;
-      });
-      await Future.delayed(const Duration(seconds: 1));
+    if (_isVerified) return;
+
+    setState(() => _isChecking = true);
+
+    try {
+      // Reload user to get latest verification status
+      await widget.user.reload();
+      final currentUser = FirebaseAuth.instance.currentUser;
+
+      if (currentUser != null && currentUser.emailVerified) {
+        _verificationCheckTimer?.cancel();
+        setState(() => _isVerified = true);
+
+        // Show verification success message
+        setState(() => _showVerifiedMessage = true);
+        _showSuccessToast('Email verified successfully!');
+
+        // Navigate to home after a brief delay
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          _navigateToHome();
+        }
+      }
+    } catch (e) {
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomePage()),
-        );
+        _showErrorToast('Error checking verification status');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isChecking = false);
       }
     }
   }
@@ -54,6 +107,30 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
         setState(() => _isResending = false);
       }
     }
+  }
+
+  void _navigateToHome() {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const HomePage(),
+        transitionsBuilder:
+            (_, a, __, c) => FadeTransition(opacity: a, child: c),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
+  }
+
+  void _navigateToLogin() {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const LoginScreen(),
+        transitionsBuilder:
+            (_, a, __, c) => FadeTransition(opacity: a, child: c),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
   }
 
   void _showErrorToast(String message) {
@@ -88,14 +165,26 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                _isVerified ? Icons.verified : Icons.mark_email_unread,
-                size: 80,
-                color: Colors.orange,
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child:
+                    _showVerifiedMessage
+                        ? const Icon(
+                          Icons.verified,
+                          key: ValueKey('verified-icon'),
+                          size: 80,
+                          color: Colors.green,
+                        )
+                        : Icon(
+                          key: ValueKey('unverified-icon'),
+                          _isChecking ? Icons.refresh : Icons.mark_email_unread,
+                          size: 80,
+                          color: _isChecking ? Colors.orange : Colors.orange,
+                        ),
               ),
               const SizedBox(height: 24),
               Text(
-                _isVerified ? 'Email Verified!' : 'Verify Your Email',
+                _showVerifiedMessage ? 'Email Verified!' : 'Verify Your Email',
                 style: GoogleFonts.poppins(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
@@ -103,15 +192,33 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text(
-                _isVerified
-                    ? 'Your email has been successfully verified.'
-                    : 'A verification link has been sent to ${widget.user.email}',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(fontSize: 16, color: Colors.white70),
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 300),
+                child:
+                    _showVerifiedMessage
+                        ? Text(
+                          key: ValueKey('verified-text'),
+                          'Thank you for verifying your email!',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.white70,
+                          ),
+                        )
+                        : Text(
+                          key: ValueKey('unverified-text'),
+                          _isChecking
+                              ? 'Checking verification status...'
+                              : 'A verification link has been sent to:\n${widget.user.email}',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            color: Colors.white70,
+                          ),
+                        ),
               ),
               const SizedBox(height: 32),
-              if (!_isVerified) ...[
+              if (!_isVerified && !_isChecking) ...[
                 ElevatedButton(
                   onPressed: _isResending ? null : _resendVerification,
                   style: ElevatedButton.styleFrom(
@@ -145,14 +252,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                 ),
                 const SizedBox(height: 16),
                 TextButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const LoginScreen(),
-                      ),
-                    );
-                  },
+                  onPressed: _navigateToLogin,
                   child: Text(
                     'Back to Login',
                     style: GoogleFonts.poppins(
@@ -162,17 +262,16 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
                   ),
                 ),
               ],
-              if (_isVerified) ...[
+              if (_isChecking) ...[
+                const SizedBox(height: 24),
+                const CircularProgressIndicator(color: Colors.orange),
+              ],
+              if (_showVerifiedMessage) ...[
                 const SizedBox(height: 24),
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomePage()),
-                    );
-                  },
+                  onPressed: _navigateToHome,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
+                    backgroundColor: Colors.green,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 32,
                       vertical: 16,
