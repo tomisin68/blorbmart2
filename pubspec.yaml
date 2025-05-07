@@ -23,6 +23,10 @@ dependencies:
   firebase_auth: ^5.5.3
   cloud_firestore: ^5.6.7
   fluttertoast: ^8.2.12
+  firebase_storage: ^12.4.5
+  image_picker: ^1.1.2
+  package_info_plus: ^8.3.0
+  shimmer: ^3.0.0
 
 dev_dependencies:
   flutter_test:
