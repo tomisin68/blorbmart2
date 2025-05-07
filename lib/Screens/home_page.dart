@@ -1,5 +1,6 @@
 import 'package:blorbmart2/Screens/cart_screen.dart';
 import 'package:blorbmart2/Screens/product_details.dart';
+import 'package:blorbmart2/Screens/profile.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -291,6 +292,10 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             icon: const Icon(Icons.chat, color: Colors.white),
             onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ProfilePage()),
+              );
               // Navigate to chat page
             },
           ),
