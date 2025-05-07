@@ -50,28 +50,36 @@ class _SignupPageState extends State<SignupPage> {
       await Future.delayed(const Duration(milliseconds: 300));
       if (mounted) {
         if (user.emailVerified) {
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const HomePage(),
-              transitionsBuilder:
-                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
-              transitionDuration: const Duration(milliseconds: 500),
-            ),
-          );
+          _navigateToHome();
         } else {
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => VerifyEmailPage(user: user),
-              transitionsBuilder:
-                  (_, a, __, c) => FadeTransition(opacity: a, child: c),
-              transitionDuration: const Duration(milliseconds: 500),
-            ),
-          );
+          _navigateToVerifyEmail(user);
         }
       }
     }
+  }
+
+  void _navigateToHome() {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => const HomePage(),
+        transitionsBuilder:
+            (_, a, __, c) => FadeTransition(opacity: a, child: c),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
+  }
+
+  void _navigateToVerifyEmail(User user) {
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => VerifyEmailPage(user: user),
+        transitionsBuilder:
+            (_, a, __, c) => FadeTransition(opacity: a, child: c),
+        transitionDuration: const Duration(milliseconds: 500),
+      ),
+    );
   }
 
   void _validatePassword() {
@@ -118,7 +126,9 @@ class _SignupPageState extends State<SignupPage> {
       final auth = FirebaseAuth.instance;
       final methods = await auth.fetchSignInMethodsForEmail(email);
       if (methods.isNotEmpty) {
-        _showErrorToast('This email is already registered');
+        _showErrorToast(
+          'This email is already registered. Please login instead.',
+        );
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -140,18 +150,8 @@ class _SignupPageState extends State<SignupPage> {
       // Send email verification
       await userCredential.user?.sendEmailVerification();
 
-      // Store user data in Firestore (but mark as unverified)
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userCredential.user?.uid)
-          .set({
-            'name': name,
-            'email': email,
-            'uid': userCredential.user?.uid,
-            'emailVerified': false,
-            'createdAt': FieldValue.serverTimestamp(),
-            'lastLogin': FieldValue.serverTimestamp(),
-          });
+      // Store user data in Firestore (mark as unverified)
+      await _storeUserData(userCredential.user!, name, email);
 
       // Store email in shared preferences
       final prefs = await SharedPreferences.getInstance();
@@ -159,35 +159,13 @@ class _SignupPageState extends State<SignupPage> {
 
       // Navigate to verification page
       if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          PageRouteBuilder(
-            pageBuilder:
-                (_, __, ___) => VerifyEmailPage(user: userCredential.user!),
-            transitionsBuilder:
-                (_, a, __, c) => FadeTransition(opacity: a, child: c),
-            transitionDuration: const Duration(milliseconds: 500),
-          ),
+        _navigateToVerifyEmail(userCredential.user!);
+        _showSuccessToast(
+          'Account created successfully! Please verify your email.',
         );
       }
     } on FirebaseAuthException catch (e) {
-      String message = 'An unknown error occurred.';
-      if (e.code == 'email-already-in-use') {
-        message = 'This email is already in use. Please login instead.';
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => const LoginScreen()),
-          );
-        }
-      } else if (e.code == 'invalid-email') {
-        message = 'Invalid email address.';
-      } else if (e.code == 'operation-not-allowed') {
-        message = 'Email/password accounts are not enabled.';
-      } else if (e.code == 'weak-password') {
-        message = 'Password is too weak.';
-      }
-      _showErrorToast(message);
+      _handleFirebaseAuthError(e);
     } catch (e) {
       _showErrorToast('Failed to sign up. Please try again.');
       if (kDebugMode) {
@@ -200,12 +178,70 @@ class _SignupPageState extends State<SignupPage> {
     }
   }
 
+  Future<void> _storeUserData(User user, String name, String email) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': name,
+        'email': email,
+        'uid': user.uid,
+        'emailVerified': false,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+        'profileComplete': false,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error storing user data: $e');
+      }
+      // Even if Firestore fails, we still proceed as auth was successful
+    }
+  }
+
+  void _handleFirebaseAuthError(FirebaseAuthException e) {
+    String message = 'An unknown error occurred.';
+    switch (e.code) {
+      case 'email-already-in-use':
+        message = 'This email is already in use. Please login instead.';
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+        }
+        break;
+      case 'invalid-email':
+        message = 'Invalid email address.';
+        break;
+      case 'operation-not-allowed':
+        message = 'Email/password accounts are not enabled.';
+        break;
+      case 'weak-password':
+        message = 'Password is too weak.';
+        break;
+      case 'network-request-failed':
+        message = 'Network error. Please check your connection.';
+        break;
+    }
+    _showErrorToast(message);
+  }
+
   void _showErrorToast(String message) {
     Fluttertoast.showToast(
       msg: message,
       toastLength: Toast.LENGTH_LONG,
       gravity: ToastGravity.TOP,
       backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+      fontSize: 16.0,
+    );
+  }
+
+  void _showSuccessToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_LONG,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.green,
       textColor: Colors.white,
       fontSize: 16.0,
     );

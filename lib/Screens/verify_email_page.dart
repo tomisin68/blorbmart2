@@ -15,7 +15,7 @@ class VerifyEmailPage extends StatefulWidget {
 
 class _VerifyEmailPageState extends State<VerifyEmailPage> {
   // ignore: unused_field
-  bool _isLoading = false;
+  final bool _isLoading = false;
   bool _isResending = false;
   bool _isVerified = false;
 
