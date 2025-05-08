@@ -11,7 +11,6 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:location/location.dart';
-// ignore: unused_import
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -37,7 +36,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
       body: _screens[_currentIndex],
-      bottomNavigationBar: _BottomNavBar(
+      bottomNavigationBar: BottomNavBar(
         currentIndex: _currentIndex,
         onTabChange: (index) {
           setState(() {
@@ -72,7 +71,7 @@ class _HomePageState extends State<HomePage> {
     'https://img.freepik.com/free-vector/flat-design-food-facebook-ad_23-2149435438.jpg',
     'https://img.freepik.com/free-psd/dark-black-friday-horizontal-banner-template_237398-195.jpg',
   ];
-  // ignore: unused_field
+
   bool _isLoading = false;
   int _currentCarouselIndex = 0;
   int _cartCount = 0;
@@ -1048,12 +1047,21 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _BottomNavBar extends StatelessWidget {
+class BottomNavBar extends StatefulWidget {
   final int currentIndex;
   final Function(int) onTabChange;
 
-  const _BottomNavBar({required this.currentIndex, required this.onTabChange});
+  const BottomNavBar({
+    super.key,
+    required this.currentIndex,
+    required this.onTabChange,
+  });
 
+  @override
+  _BottomNavBarState createState() => _BottomNavBarState();
+}
+
+class _BottomNavBarState extends State<BottomNavBar> {
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1105,11 +1113,11 @@ class _BottomNavBar extends StatelessWidget {
     required String label,
     required int index,
   }) {
-    final isSelected = currentIndex == index;
+    final isSelected = widget.currentIndex == index;
     final color = isSelected ? Colors.orange : Colors.white.withOpacity(0.7);
 
     return GestureDetector(
-      onTap: () => onTabChange(index),
+      onTap: () => widget.onTabChange(index),
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
