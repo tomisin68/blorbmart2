@@ -2,7 +2,6 @@ import 'package:blorbmart2/Screens/cart_screen.dart';
 import 'package:blorbmart2/Screens/product_details.dart';
 import 'package:blorbmart2/Screens/product_feed.dart';
 import 'package:blorbmart2/Screens/profile.dart';
-import 'package:blorbmart2/bottom_nav.dart';
 import 'package:blorbmart2/saved_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
@@ -12,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:location/location.dart';
+// ignore: unused_import
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -37,7 +37,7 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
       body: _screens[_currentIndex],
-      bottomNavigationBar: BottomNavBar(
+      bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
         onTabChange: (index) {
           setState(() {
@@ -64,13 +64,20 @@ class _HomePageState extends State<HomePage> {
   final PageController _carouselController = PageController();
   final Location _location = Location();
 
-  List<String> _carouselImages = [];
-  bool _isLoading = true;
+  List<String> _carouselImages = [
+    'https://img.freepik.com/free-psd/social-media-template-banner-black-friday-super-discounts_237398-728.jpg',
+    'https://img.freepik.com/free-psd/post-social-media-templa-year-end-deals-ofertas-brazil_237398-355.jpg',
+    'https://img.freepik.com/free-psd/cyber-monday-super-sale-facebook-cover-banner-template_237398-3781.jpg',
+    'https://img.freepik.com/free-psd/cyber-monday-super-sale-facebook-cover-banner-template_237398-3782.jpg',
+    'https://img.freepik.com/free-vector/flat-design-food-facebook-ad_23-2149435438.jpg',
+    'https://img.freepik.com/free-psd/dark-black-friday-horizontal-banner-template_237398-195.jpg',
+  ];
+  // ignore: unused_field
+  bool _isLoading = false;
   int _currentCarouselIndex = 0;
   int _cartCount = 0;
   LocationData? _currentLocation;
 
-  // Updated with real Unsplash URLs
   final List<Map<String, dynamic>> _categories = [
     {
       'name': 'Appliances',
@@ -109,14 +116,16 @@ class _HomePageState extends State<HomePage> {
       'name': '6L Air Fryer',
       'price': 45000,
       'stock': 5,
-      'image': 'https://images.unsplash.com/photo-1618442302325-8b5f8e3a3b0d',
+      'image':
+          'https://img.freepik.com/free-psd/rice-cooker-isolated-transparent-background_176382-1344.jpg',
       'sponsored': false,
     },
     {
       'name': 'Bluetooth Headphones',
       'price': 25000,
       'stock': 12,
-      'image': 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e',
+      'image':
+          'https://img.freepik.com/free-psd/sleek-black-silver-headphones-premium-audio-experience_176382-4090.jpg',
       'sponsored': false,
     },
     {
@@ -130,7 +139,8 @@ class _HomePageState extends State<HomePage> {
       'name': 'Programming Book',
       'price': 15000,
       'stock': 3,
-      'image': 'https://images.unsplash.com/photo-1544947950-fa07a98d237f',
+      'image':
+          'https://img.freepik.com/free-psd/software-engineering-flyer-template-design_176382-3563.jpg',
       'sponsored': false,
     },
     {
@@ -144,7 +154,8 @@ class _HomePageState extends State<HomePage> {
       'name': 'Wireless Charger',
       'price': 12000,
       'stock': 15,
-      'image': 'https://images.unsplash.com/photo-1583394838336-acd977736f90',
+      'image':
+          'https://img.freepik.com/free-psd/smartphone-stylish-white-stand-vibrant-red-screen-display_176382-4126.jpg',
       'sponsored': false,
     },
   ];
@@ -187,7 +198,6 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _fetchCarouselImages();
     _fetchCartCount();
     _getCurrentLocation();
   }
@@ -212,40 +222,6 @@ class _HomePageState extends State<HomePage> {
       });
     } catch (e) {
       _showErrorToast('Failed to get location');
-    }
-  }
-
-  Future<void> _fetchCarouselImages() async {
-    try {
-      final querySnapshot = await _firestore.collection('carouselImages').get();
-      final images =
-          querySnapshot.docs
-              .map((doc) => doc.data()['imageurl'] as String? ?? '')
-              .where((url) => url.isNotEmpty)
-              .toList();
-
-      setState(() {
-        _carouselImages =
-            images.isNotEmpty
-                ? images
-                : [
-                  'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
-                  'https://images.unsplash.com/photo-1556740714-a8395b3bf30f',
-                  'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
-                  'https://images.unsplash.com/photo-1556740714-a8395b3bf30f',
-                ];
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _carouselImages = [
-          'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
-          'https://images.unsplash.com/photo-1556740714-a8395b3bf30f',
-          'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
-          'https://images.unsplash.com/photo-1556740714-a8395b3bf30f',
-        ];
-        _isLoading = false;
-      });
     }
   }
 
@@ -388,11 +364,7 @@ class _HomePageState extends State<HomePage> {
       body: RefreshIndicator(
         key: _refreshIndicatorKey,
         onRefresh: () async {
-          await Future.wait([
-            _fetchCarouselImages(),
-            _fetchCartCount(),
-            _getCurrentLocation(),
-          ]);
+          await Future.wait([_fetchCartCount(), _getCurrentLocation()]);
         },
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -411,7 +383,7 @@ class _HomePageState extends State<HomePage> {
               ),
 
               // Carousel slider
-              _isLoading ? _buildCarouselShimmer() : _buildImageCarousel(),
+              _buildImageCarousel(),
 
               // Categories section
               _buildSectionHeader(title: 'Categories', onSeeAll: () {}),
@@ -436,7 +408,7 @@ class _HomePageState extends State<HomePage> {
               _buildSectionHeader(title: 'Official Stores', onSeeAll: () {}),
               _buildOfficialStores(),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 80), // Space for bottom bar
             ],
           ),
         ),
@@ -675,7 +647,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildProductList(bool sponsored) {
     return SizedBox(
-      height: 200,
+      height: 220, // Increased height to accommodate better card layout
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -694,7 +666,7 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
-        width: 150,
+        width: 160, // Slightly wider for better content fit
         child: Card(
           color: const Color(0xFF1A3A6A),
           shape: RoundedRectangleBorder(
@@ -720,7 +692,7 @@ class _HomePageState extends State<HomePage> {
                         top: Radius.circular(12),
                       ),
                       child: SizedBox(
-                        height: 100,
+                        height: 120,
                         width: double.infinity,
                         child: CachedNetworkImage(
                           imageUrl: product['image'],
@@ -794,10 +766,11 @@ class _HomePageState extends State<HomePage> {
                           onPressed: () => _addToCart(product),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.orange,
-                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
+                            minimumSize: const Size(0, 36), // Fixed height
                           ),
                           child: Text(
                             'Add to Cart',
@@ -943,24 +916,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildCarouselShimmer() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Shimmer.fromColors(
-        baseColor: Colors.white.withOpacity(0.1),
-        highlightColor: Colors.white.withOpacity(0.2),
-        child: Container(
-          height: 180,
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            color: Colors.white,
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showBecomeSellerDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -1090,5 +1045,111 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _carouselController.dispose();
     super.dispose();
+  }
+}
+
+class _BottomNavBar extends StatelessWidget {
+  final int currentIndex;
+  final Function(int) onTabChange;
+
+  const _BottomNavBar({required this.currentIndex, required this.onTabChange});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A1E3D),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 10,
+            spreadRadius: 2,
+            offset: const Offset(0, -2),
+          ),
+        ],
+        border: Border(
+          top: BorderSide(color: Colors.orange.withOpacity(0.3), width: 1),
+        ),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _buildNavItem(icon: Icons.home_rounded, label: 'Home', index: 0),
+              _buildNavItem(
+                icon: Icons.bookmark_rounded,
+                label: 'Saved',
+                index: 1,
+              ),
+              _buildNavItem(
+                icon: Icons.search_rounded,
+                label: 'Search',
+                index: 2,
+              ),
+              _buildNavItem(
+                icon: Icons.person_rounded,
+                label: 'Profile',
+                index: 3,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNavItem({
+    required IconData icon,
+    required String label,
+    required int index,
+  }) {
+    final isSelected = currentIndex == index;
+    final color = isSelected ? Colors.orange : Colors.white.withOpacity(0.7);
+
+    return GestureDetector(
+      onTap: () => onTabChange(index),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color:
+              isSelected ? Colors.orange.withOpacity(0.1) : Colors.transparent,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (Widget child, Animation<double> animation) {
+                return ScaleTransition(scale: animation, child: child);
+              },
+              child: Icon(
+                icon,
+                key: ValueKey<int>(isSelected ? 1 : 0),
+                size: 24,
+                color: color,
+              ),
+            ),
+            const SizedBox(height: 4),
+            AnimatedOpacity(
+              duration: const Duration(milliseconds: 200),
+              opacity: isSelected ? 1.0 : 0.0,
+              child: Text(
+                label,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: color,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
