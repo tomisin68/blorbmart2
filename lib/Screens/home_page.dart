@@ -14,6 +14,20 @@ import 'package:location/location.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Blorbmart',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: const SafeArea(child: MainScreen()),
+      debugShowCheckedModeBanner: false,
+    );
+  }
+}
+
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
 
@@ -44,6 +58,147 @@ class _MainScreenState extends State<MainScreen> {
           });
         },
       ),
+      floatingActionButton:
+          _currentIndex == 0
+              ? FloatingActionButton(
+                backgroundColor: Colors.orange,
+                onPressed: () => _showBecomeSellerDialog(context),
+                child: const Icon(Icons.store, color: Colors.white),
+              )
+              : null,
+    );
+  }
+
+  void _showBecomeSellerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1E3D),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.orange, width: 2),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Become a Seller on Blorbmart',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl:
+                        'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    placeholder:
+                        (context, url) => Shimmer.fromColors(
+                          baseColor: Colors.grey[300]!,
+                          highlightColor: Colors.grey[100]!,
+                          child: Container(color: Colors.white),
+                        ),
+                    errorWidget:
+                        (context, url, error) => const Icon(Icons.error),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Join our community of student sellers and start making money from your unused items!',
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildBenefitItem('No listing fees'),
+                    _buildBenefitItem('Campus-wide reach'),
+                    _buildBenefitItem('Secure transactions'),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: Text(
+                        'Not Now',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        const url = 'https://market-monitor-five.vercel.app';
+                        if (await canLaunchUrl(Uri.parse(url))) {
+                          await launchUrl(Uri.parse(url));
+                        } else {
+                          throw 'Could not launch $url';
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: Text(
+                        'Seller Portal',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBenefitItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -72,6 +227,7 @@ class _HomePageState extends State<HomePage> {
     'https://img.freepik.com/free-psd/dark-black-friday-horizontal-banner-template_237398-195.jpg',
   ];
 
+  // ignore: unused_field
   bool _isLoading = false;
   int _currentCarouselIndex = 0;
   int _cartCount = 0;
@@ -296,80 +452,87 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A1E3D),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1E3D),
-        elevation: 0,
-        title: Container(
-          height: 45,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
-          ),
-          child: TextField(
-            style: GoogleFonts.poppins(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Search on Blorbmart',
-              hintStyle: GoogleFonts.poppins(color: Colors.white70),
-              border: InputBorder.none,
-              prefixIcon: const Icon(Icons.search, color: Colors.white70),
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chat, color: Colors.white),
-            onPressed: () {},
-          ),
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CartScreen()),
-                  );
-                },
-              ),
-              if (_cartCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 5,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      '$_cartCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
+    return RefreshIndicator(
+      key: _refreshIndicatorKey,
+      onRefresh: () async {
+        await Future.wait([_fetchCartCount(), _getCurrentLocation()]);
+      },
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverAppBar(
+            backgroundColor: const Color(0xFF0A1E3D),
+            elevation: 0,
+            pinned: true,
+            title: Container(
+              height: 45,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.orange.withOpacity(0.5),
+                  width: 1,
                 ),
+              ),
+              child: TextField(
+                style: GoogleFonts.poppins(color: Colors.white),
+                decoration: InputDecoration(
+                  hintText: 'Search on Blorbmart',
+                  hintStyle: GoogleFonts.poppins(color: Colors.white70),
+                  border: InputBorder.none,
+                  prefixIcon: const Icon(Icons.search, color: Colors.white70),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.chat, color: Colors.white),
+                onPressed: () {},
+              ),
+              Stack(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CartScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  if (_cartCount > 0)
+                    Positioned(
+                      right: 8,
+                      top: 5,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.red,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$_cartCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
-        ],
-      ),
-      body: RefreshIndicator(
-        key: _refreshIndicatorKey,
-        onRefresh: () async {
-          await Future.wait([_fetchCartCount(), _getCurrentLocation()]);
-        },
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+          SliverList(
+            delegate: SliverChildListDelegate([
               // Nearby feeds section
               _buildSectionHeader(
                 icon: Icons.location_on,
@@ -408,14 +571,9 @@ class _HomePageState extends State<HomePage> {
               _buildOfficialStores(),
 
               const SizedBox(height: 80), // Space for bottom bar
-            ],
+            ]),
           ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.orange,
-        onPressed: () => _showBecomeSellerDialog(context),
-        child: const Icon(Icons.store, color: Colors.white),
+        ],
       ),
     );
   }
@@ -498,8 +656,11 @@ class _HomePageState extends State<HomePage> {
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
                         placeholder:
-                            (_, __) =>
-                                Container(color: Colors.white.withOpacity(0.1)),
+                            (_, __) => Shimmer.fromColors(
+                              baseColor: Colors.grey[300]!,
+                              highlightColor: Colors.grey[100]!,
+                              child: Container(color: Colors.white),
+                            ),
                         errorWidget:
                             (_, __, ___) => Container(
                               color: Colors.white.withOpacity(0.1),
@@ -646,7 +807,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildProductList(bool sponsored) {
     return SizedBox(
-      height: 220, // Increased height to accommodate better card layout
+      height: 220,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -665,7 +826,7 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
-        width: 160, // Slightly wider for better content fit
+        width: 160,
         child: Card(
           color: const Color(0xFF1A3A6A),
           shape: RoundedRectangleBorder(
@@ -697,8 +858,10 @@ class _HomePageState extends State<HomePage> {
                           imageUrl: product['image'],
                           fit: BoxFit.cover,
                           placeholder:
-                              (_, __) => Container(
-                                color: Colors.white.withOpacity(0.1),
+                              (_, __) => Shimmer.fromColors(
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
+                                child: Container(color: Colors.white),
                               ),
                           errorWidget:
                               (_, __, ___) => Container(
@@ -769,7 +932,7 @@ class _HomePageState extends State<HomePage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            minimumSize: const Size(0, 36), // Fixed height
+                            minimumSize: const Size(0, 36),
                           ),
                           child: Text(
                             'Add to Cart',
@@ -879,8 +1042,10 @@ class _HomePageState extends State<HomePage> {
                           imageUrl: _officialStores[index]['image'],
                           fit: BoxFit.cover,
                           placeholder:
-                              (_, __) => Container(
-                                color: Colors.white.withOpacity(0.1),
+                              (_, __) => Shimmer.fromColors(
+                                baseColor: Colors.grey[300]!,
+                                highlightColor: Colors.grey[100]!,
+                                child: Container(color: Colors.white),
                               ),
                           errorWidget:
                               (_, __, ___) => Container(
@@ -911,131 +1076,6 @@ class _HomePageState extends State<HomePage> {
             ),
           );
         },
-      ),
-    );
-  }
-
-  void _showBecomeSellerDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1E3D),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.orange, width: 2),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Become a Seller on Blorbmart',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl:
-                        'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Join our community of student sellers and start making money from your unused items!',
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildBenefitItem('No listing fees'),
-                    _buildBenefitItem('Campus-wide reach'),
-                    _buildBenefitItem('Secure transactions'),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Not Now',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        const url = 'https://market-monitor-five.vercel.app';
-                        if (await canLaunchUrl(Uri.parse(url))) {
-                          await launchUrl(Uri.parse(url));
-                        } else {
-                          throw 'Could not launch $url';
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Seller Portal',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildBenefitItem(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 16),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
-          ),
-        ],
       ),
     );
   }
