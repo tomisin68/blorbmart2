@@ -15,7 +15,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({Key? key}) : super(key: key);
+  const MainScreen({super.key});
 
   @override
   _MainScreenState createState() => _MainScreenState();
@@ -63,16 +63,11 @@ class _HomePageState extends State<HomePage> {
   final PageController _carouselController = PageController();
   final Location _location = Location();
 
-  List<String> _carouselImages = [
-    'https://img.freepik.com/free-psd/social-media-template-banner-black-friday-super-discounts_237398-728.jpg',
-    'https://img.freepik.com/free-psd/post-social-media-templa-year-end-deals-ofertas-brazil_237398-355.jpg',
-    'https://img.freepik.com/free-psd/cyber-monday-super-sale-facebook-cover-banner-template_237398-3781.jpg',
-    'https://img.freepik.com/free-psd/cyber-monday-super-sale-facebook-cover-banner-template_237398-3782.jpg',
-    'https://img.freepik.com/free-vector/flat-design-food-facebook-ad_23-2149435438.jpg',
-    'https://img.freepik.com/free-psd/dark-black-friday-horizontal-banner-template_237398-195.jpg',
-  ];
+  List<String> _carouselImages = [];
+  bool _isLoadingCarousel = true;
 
-  bool _isLoading = false;
+  // ignore: unused_field
+  final bool _isLoading = false;
   int _currentCarouselIndex = 0;
   int _cartCount = 0;
   LocationData? _currentLocation;
@@ -199,6 +194,32 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _fetchCartCount();
     _getCurrentLocation();
+    _fetchCarouselImages();
+  }
+
+  Future<void> _fetchCarouselImages() async {
+    try {
+      final snapshot = await _firestore.collection('carouselImages').get();
+      final images =
+          snapshot.docs
+              .map((doc) => doc.data()['imageurl'] as String? ?? '')
+              .where((url) => url.isNotEmpty)
+              .toList();
+
+      if (mounted) {
+        setState(() {
+          _carouselImages = images;
+          _isLoadingCarousel = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingCarousel = false;
+        });
+      }
+      _showErrorToast('Failed to load carousel images');
+    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -216,9 +237,11 @@ class _HomePageState extends State<HomePage> {
       }
 
       final locationData = await _location.getLocation();
-      setState(() {
-        _currentLocation = locationData;
-      });
+      if (mounted) {
+        setState(() {
+          _currentLocation = locationData;
+        });
+      }
     } catch (e) {
       _showErrorToast('Failed to get location');
     }
@@ -234,9 +257,11 @@ class _HomePageState extends State<HomePage> {
               .doc(_auth.currentUser!.uid)
               .collection('cart')
               .get();
-      setState(() {
-        _cartCount = doc.size;
-      });
+      if (mounted) {
+        setState(() {
+          _cartCount = doc.size;
+        });
+      }
     } catch (e) {
       if (mounted) _showErrorToast('Failed to load cart count');
     }
@@ -262,7 +287,9 @@ class _HomePageState extends State<HomePage> {
             'addedAt': FieldValue.serverTimestamp(),
           });
 
-      setState(() => _cartCount++);
+      if (mounted) {
+        setState(() => _cartCount++);
+      }
       _showSuccessToast('${product['name']} added to cart');
     } catch (e) {
       _showErrorToast('Failed to add to cart');
@@ -363,7 +390,11 @@ class _HomePageState extends State<HomePage> {
       body: RefreshIndicator(
         key: _refreshIndicatorKey,
         onRefresh: () async {
-          await Future.wait([_fetchCartCount(), _getCurrentLocation()]);
+          await Future.wait([
+            _fetchCartCount(),
+            _getCurrentLocation(),
+            _fetchCarouselImages(),
+          ]);
         },
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
@@ -471,6 +502,43 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildImageCarousel() {
+    if (_isLoadingCarousel) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: SizedBox(
+          height: 180,
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey[800]!,
+            highlightColor: Colors.grey[700]!,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (_carouselImages.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Container(
+          height: 180,
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Center(
+            child: Icon(Icons.error_outline, color: Colors.white),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
@@ -1047,7 +1115,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class BottomNavBar extends StatefulWidget {
+class BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final Function(int) onTabChange;
 
@@ -1057,11 +1125,6 @@ class BottomNavBar extends StatefulWidget {
     required this.onTabChange,
   });
 
-  @override
-  _BottomNavBarState createState() => _BottomNavBarState();
-}
-
-class _BottomNavBarState extends State<BottomNavBar> {
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1085,21 +1148,33 @@ class _BottomNavBarState extends State<BottomNavBar> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildNavItem(icon: Icons.home_rounded, label: 'Home', index: 0),
+              _buildNavItem(
+                icon: Icons.home_rounded,
+                label: 'Home',
+                index: 0,
+                isSelected: currentIndex == 0,
+                onTap: () => onTabChange(0),
+              ),
               _buildNavItem(
                 icon: Icons.bookmark_rounded,
                 label: 'Saved',
                 index: 1,
+                isSelected: currentIndex == 1,
+                onTap: () => onTabChange(1),
               ),
               _buildNavItem(
                 icon: Icons.search_rounded,
                 label: 'Search',
                 index: 2,
+                isSelected: currentIndex == 2,
+                onTap: () => onTabChange(2),
               ),
               _buildNavItem(
                 icon: Icons.person_rounded,
                 label: 'Profile',
                 index: 3,
+                isSelected: currentIndex == 3,
+                onTap: () => onTabChange(3),
               ),
             ],
           ),
@@ -1112,12 +1187,13 @@ class _BottomNavBarState extends State<BottomNavBar> {
     required IconData icon,
     required String label,
     required int index,
+    required bool isSelected,
+    required VoidCallback onTap,
   }) {
-    final isSelected = widget.currentIndex == index;
     final color = isSelected ? Colors.orange : Colors.white.withOpacity(0.7);
 
     return GestureDetector(
-      onTap: () => widget.onTabChange(index),
+      onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -1130,23 +1206,10 @@ class _BottomNavBarState extends State<BottomNavBar> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (Widget child, Animation<double> animation) {
-                return ScaleTransition(scale: animation, child: child);
-              },
-              child: Icon(
-                icon,
-                key: ValueKey<int>(isSelected ? 1 : 0),
-                size: 24,
-                color: color,
-              ),
-            ),
-            const SizedBox(height: 4),
-            AnimatedOpacity(
-              duration: const Duration(milliseconds: 200),
-              opacity: isSelected ? 1.0 : 0.0,
-              child: Text(
+            Icon(icon, size: 24, color: color),
+            if (isSelected) ...[
+              const SizedBox(height: 4),
+              Text(
                 label,
                 style: GoogleFonts.poppins(
                   fontSize: 12,
@@ -1154,7 +1217,7 @@ class _BottomNavBarState extends State<BottomNavBar> {
                   color: color,
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
