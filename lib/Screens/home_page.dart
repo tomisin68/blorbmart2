@@ -36,10 +36,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: BottomNavBar(
         currentIndex: _currentIndex,
         onTabChange: (index) {
@@ -203,16 +200,18 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<List<Map<String, dynamic>>> _parseProductDocuments(
-      List<DocumentSnapshot> docs) async {
+    List<DocumentSnapshot> docs,
+  ) async {
     return docs.map((doc) {
       final data = doc.data() as Map<String, dynamic>;
       return {
         'id': doc.id,
         'name': data['name'] ?? 'No Name',
         'price': (data['price'] as num?)?.toDouble() ?? 0.0,
-        'image': data['images'] is List && data['images'].isNotEmpty
-            ? data['images'][0]
-            : '',
+        'image':
+            data['images'] is List && data['images'].isNotEmpty
+                ? data['images'][0]
+                : '',
         'stock': data['stock'] ?? 0,
         'sponsored': data['sponsored'] ?? false,
         'description': data['description'] ?? '',
@@ -233,15 +232,16 @@ class _HomePageState extends State<HomePage> {
           .limit(6)
           .get(const GetOptions(source: Source.cache));
 
-      final categories = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return {
-          'id': doc.id,
-          'name': data['name'] ?? 'No Name',
-          'description': data['description'] ?? '',
-          'imageUrl': data['imageUrl'] ?? '',
-        };
-      }).toList();
+      final categories =
+          snapshot.docs.map((doc) {
+            final data = doc.data();
+            return {
+              'id': doc.id,
+              'name': data['name'] ?? 'No Name',
+              'description': data['description'] ?? '',
+              'imageUrl': data['imageUrl'] ?? '',
+            };
+          }).toList();
 
       if (mounted) {
         setState(() {
@@ -267,10 +267,11 @@ class _HomePageState extends State<HomePage> {
           .collection('carouselImages')
           .get(const GetOptions(source: Source.cache));
 
-      final images = snapshot.docs
-          .map((doc) => doc.data()['imageurl'] as String? ?? '')
-          .where((url) => url.isNotEmpty)
-          .toList();
+      final images =
+          snapshot.docs
+              .map((doc) => doc.data()['imageurl'] as String? ?? '')
+              .where((url) => url.isNotEmpty)
+              .toList();
 
       if (mounted) {
         setState(() {
@@ -497,9 +498,10 @@ class _HomePageState extends State<HomePage> {
                   _buildSectionHeader(
                     icon: Icons.location_on,
                     title: 'Nearby Products & Stores',
-                    subtitle: _currentLocation != null
-                        ? 'Lat: ${_currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${_currentLocation!.longitude!.toStringAsFixed(4)}'
-                        : null,
+                    subtitle:
+                        _currentLocation != null
+                            ? 'Lat: ${_currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${_currentLocation!.longitude!.toStringAsFixed(4)}'
+                            : null,
                     onSeeAll: () {},
                   ),
                   _buildImageCarousel(),
@@ -540,16 +542,17 @@ class _HomePageState extends State<HomePage> {
             ),
             SliverToBoxAdapter(child: _buildOfficialStores()),
             SliverToBoxAdapter(
-              child: _isFetchingMore
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: Colors.orange,
+              child:
+                  _isFetchingMore
+                      ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.orange,
+                          ),
                         ),
-                      ),
-                    )
-                  : const SizedBox(height: 80),
+                      )
+                      : const SizedBox(height: 80),
             ),
           ],
         ),
@@ -663,12 +666,14 @@ class _HomePageState extends State<HomePage> {
                   child: CachedNetworkImage(
                     imageUrl: _carouselImages[index],
                     fit: BoxFit.cover,
-                    placeholder: (_, __) =>
-                        Container(color: Colors.white.withOpacity(0.1)),
-                    errorWidget: (_, __, ___) => Container(
-                      color: Colors.white.withOpacity(0.1),
-                      child: const Icon(Icons.error, color: Colors.white),
-                    ),
+                    placeholder:
+                        (_, __) =>
+                            Container(color: Colors.white.withOpacity(0.1)),
+                    errorWidget:
+                        (_, __, ___) => Container(
+                          color: Colors.white.withOpacity(0.1),
+                          child: const Icon(Icons.error, color: Colors.white),
+                        ),
                   ),
                 ),
               );
@@ -677,19 +682,21 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children: _carouselImages.asMap().entries.map((entry) {
-              return Container(
-                width: 8,
-                height: 8,
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _currentCarouselIndex == entry.key
-                      ? Colors.orange
-                      : Colors.white.withOpacity(0.4),
-                ),
-              );
-            }).toList(),
+            children:
+                _carouselImages.asMap().entries.map((entry) {
+                  return Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color:
+                          _currentCarouselIndex == entry.key
+                              ? Colors.orange
+                              : Colors.white.withOpacity(0.4),
+                    ),
+                  );
+                }).toList(),
           ),
         ],
       ),
@@ -748,10 +755,11 @@ class _HomePageState extends State<HomePage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ProductFeed(
-                          categoryId: category['id'],
-                          categoryName: category['name'],
-                        ),
+                        builder:
+                            (context) => ProductFeed(
+                              categoryId: category['id'],
+                              categoryName: category['name'],
+                            ),
                       ),
                     );
                   },
@@ -760,26 +768,28 @@ class _HomePageState extends State<HomePage> {
                     height: 70,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      image: category['imageUrl'] != null &&
-                              category['imageUrl'].isNotEmpty
-                          ? DecorationImage(
-                              image: CachedNetworkImageProvider(
-                                category['imageUrl'],
-                              ),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
+                      image:
+                          category['imageUrl'] != null &&
+                                  category['imageUrl'].isNotEmpty
+                              ? DecorationImage(
+                                image: CachedNetworkImageProvider(
+                                  category['imageUrl'],
+                                ),
+                                fit: BoxFit.cover,
+                              )
+                              : null,
                     ),
-                    child: category['imageUrl'] == null ||
-                            category['imageUrl'].isEmpty
-                        ? Center(
-                            child: Icon(
-                              Icons.category,
-                              color: Colors.white,
-                              size: 30,
-                            ),
-                          )
-                        : null,
+                    child:
+                        category['imageUrl'] == null ||
+                                category['imageUrl'].isEmpty
+                            ? Center(
+                              child: Icon(
+                                Icons.category,
+                                color: Colors.white,
+                                size: 30,
+                              ),
+                            )
+                            : null,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -925,7 +935,7 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
-      ));
+      );
     }
 
     return SliverToBoxAdapter(
@@ -1029,12 +1039,18 @@ class _HomePageState extends State<HomePage> {
                         child: CachedNetworkImage(
                           imageUrl: product['image'],
                           fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              Container(color: Colors.white.withOpacity(0.1)),
-                          errorWidget: (_, __, ___) => Container(
-                            color: Colors.white.withOpacity(0.1),
-                            child: const Icon(Icons.error, color: Colors.white),
-                          ),
+                          placeholder:
+                              (_, __) => Container(
+                                color: Colors.white.withOpacity(0.1),
+                              ),
+                          errorWidget:
+                              (_, __, ___) => Container(
+                                color: Colors.white.withOpacity(0.1),
+                                child: const Icon(
+                                  Icons.error,
+                                  color: Colors.white,
+                                ),
+                              ),
                         ),
                       ),
                     ),
@@ -1067,7 +1083,9 @@ class _HomePageState extends State<HomePage> {
                               onPressed: () => _addToCart(product),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.orange,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
@@ -1099,14 +1117,15 @@ class _HomePageState extends State<HomePage> {
                         shape: BoxShape.circle,
                       ),
                       child: StreamBuilder<DocumentSnapshot>(
-                        stream: _auth.currentUser != null
-                            ? _firestore
-                                .collection('users')
-                                .doc(_auth.currentUser!.uid)
-                                .collection('saved')
-                                .doc(product['id'])
-                                .snapshots()
-                            : null,
+                        stream:
+                            _auth.currentUser != null
+                                ? _firestore
+                                    .collection('users')
+                                    .doc(_auth.currentUser!.uid)
+                                    .collection('saved')
+                                    .doc(product['id'])
+                                    .snapshots()
+                                : null,
                         builder: (context, snapshot) {
                           final isSaved = snapshot.data?.exists ?? false;
                           return Icon(
@@ -1507,7 +1526,8 @@ class _BottomNavBarState extends State<BottomNavBar> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color: isSelected ? Colors.orange.withOpacity(0.1) : Colors.transparent,
+          color:
+              isSelected ? Colors.orange.withOpacity(0.1) : Colors.transparent,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
