@@ -82,72 +82,73 @@ class _CategoriesPageState extends State<CategoriesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1E3D),
+      backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
+        backgroundColor: Colors.white,
         elevation: 0,
         title: Text(
           'Browse Categories',
           style: GoogleFonts.poppins(
-            color: Colors.white,
+            color: const Color(0xFF1A1A1A),
             fontWeight: FontWeight.w600,
             fontSize: 22,
           ),
         ),
         centerTitle: true,
-        flexibleSpace: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                const Color(0xFF0A1E3D).withOpacity(0.9),
-                const Color(0xFF0A1E3D).withOpacity(0.7),
-              ],
-            ),
+        iconTheme: const IconThemeData(color: Color(0xFF1A1A1A)),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () {
+              // Optional: Focus the search field when icon is pressed
+              FocusScope.of(context).requestFocus(FocusNode());
+              Future.delayed(Duration.zero, () {
+                FocusScope.of(context).requestFocus(FocusNode());
+              });
+            },
           ),
-        ),
+        ],
       ),
       body: RefreshIndicator(
         onRefresh: _fetchCategories,
-        color: Colors.orange,
-        backgroundColor: const Color(0xFF1A3A6A),
+        color: const Color(0xFF4CAF50),
+        backgroundColor: Colors.white,
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
           slivers: [
             SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
               sliver: SliverToBoxAdapter(
                 child: Container(
                   height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
+                        color: Colors.black.withOpacity(0.05),
                         blurRadius: 8,
-                        offset: const Offset(0, 4),
+                        offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: TextField(
                     controller: _searchController,
                     style: GoogleFonts.poppins(
-                      color: Colors.white,
+                      color: const Color(0xFF1A1A1A),
                       fontSize: 16,
                     ),
                     decoration: InputDecoration(
                       hintText: 'Search categories...',
                       hintStyle: GoogleFonts.poppins(
-                        color: Colors.white.withOpacity(0.6),
+                        color: const Color(0xFF9E9E9E),
                       ),
                       border: InputBorder.none,
                       prefixIcon: Icon(
                         Icons.search_rounded,
-                        color: Colors.white.withOpacity(0.6),
+                        color: const Color(0xFF9E9E9E),
                         size: 24,
                       ),
                       suffixIcon:
@@ -155,7 +156,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                               ? IconButton(
                                 icon: Icon(
                                   Icons.clear_rounded,
-                                  color: Colors.white.withOpacity(0.6),
+                                  color: const Color(0xFF9E9E9E),
                                 ),
                                 onPressed: () {
                                   _searchController.clear();
@@ -196,7 +197,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                         Icon(
                           Icons.category_outlined,
                           size: 64,
-                          color: Colors.white.withOpacity(0.3),
+                          color: const Color(0xFF9E9E9E),
                         ),
                         const SizedBox(height: 24),
                         Text(
@@ -204,7 +205,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                               ? 'No categories available'
                               : 'No matches found',
                           style: GoogleFonts.poppins(
-                            color: Colors.white,
+                            color: const Color(0xFF1A1A1A),
                             fontSize: 18,
                             fontWeight: FontWeight.w500,
                           ),
@@ -215,7 +216,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                               ? 'Check back later for new categories'
                               : 'Try a different search term',
                           style: GoogleFonts.poppins(
-                            color: Colors.white.withOpacity(0.6),
+                            color: const Color(0xFF9E9E9E),
                             fontSize: 14,
                           ),
                           textAlign: TextAlign.center,
@@ -227,8 +228,8 @@ class _CategoriesPageState extends State<CategoriesPage> {
                               _searchController.clear();
                             },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange.withOpacity(0.2),
-                              foregroundColor: Colors.orange,
+                              backgroundColor: const Color(0xFF4CAF50),
+                              foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
@@ -236,6 +237,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                                 horizontal: 24,
                                 vertical: 12,
                               ),
+                              elevation: 0,
                             ),
                             child: Text(
                               'Clear search',
@@ -252,7 +254,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
               )
             else
               SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(16),
                 sliver: SliverGrid(
                   gridDelegate: SliverQuiltedGridDelegate(
                     crossAxisCount: 2,
@@ -278,23 +280,14 @@ class _CategoriesPageState extends State<CategoriesPage> {
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder:
-                  (context) => ProductFeed(
-                    categoryId: category['id'],
-                    categoryName: category['name'],
-                  ),
-            ),
-          );
+          _navigateToCategoryProducts(category);
         },
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.2),
+                color: Colors.black.withOpacity(0.1),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
               ),
@@ -314,25 +307,25 @@ class _CategoriesPageState extends State<CategoriesPage> {
                             fit: BoxFit.cover,
                             placeholder:
                                 (context, url) =>
-                                    Container(color: const Color(0xFF1A3A6A)),
+                                    Container(color: const Color(0xFFEEEEEE)),
                             errorWidget:
                                 (context, url, error) => Container(
-                                  color: const Color(0xFF1A3A6A),
+                                  color: const Color(0xFFEEEEEE),
                                   child: Center(
                                     child: Icon(
                                       Icons.category,
-                                      color: Colors.white.withOpacity(0.2),
+                                      color: const Color(0xFF9E9E9E),
                                       size: 48,
                                     ),
                                   ),
                                 ),
                           )
                           : Container(
-                            color: const Color(0xFF1A3A6A),
+                            color: const Color(0xFFEEEEEE),
                             child: Center(
                               child: Icon(
                                 Icons.category,
-                                color: Colors.white.withOpacity(0.2),
+                                color: const Color(0xFF9E9E9E),
                                 size: 48,
                               ),
                             ),
@@ -347,7 +340,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.7),
+                          Colors.black.withOpacity(0.6),
                         ],
                         stops: [0.5, 1.0],
                       ),
@@ -379,7 +372,7 @@ class _CategoriesPageState extends State<CategoriesPage> {
                           child: Text(
                             category['description'],
                             style: GoogleFonts.poppins(
-                              color: Colors.white.withOpacity(0.8),
+                              color: Colors.white.withOpacity(0.9),
                               fontSize: 12,
                               height: 1.4,
                             ),
@@ -387,8 +380,32 @@ class _CategoriesPageState extends State<CategoriesPage> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                      const SizedBox(height: 8),
-                      Container(height: 2, width: 24, color: Colors.orange),
+                      const SizedBox(height: 12),
+                      // Explore button
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () {
+                            _navigateToCategoryProducts(category);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: const Color(0xFF4CAF50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            'Explore',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -400,6 +417,17 @@ class _CategoriesPageState extends State<CategoriesPage> {
                       color: Colors.white.withOpacity(0),
                       borderRadius: BorderRadius.circular(16),
                     ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () {
+                          _navigateToCategoryProducts(category);
+                        },
+                        splashColor: Colors.white.withOpacity(0.1),
+                        highlightColor: Colors.white.withOpacity(0.05),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -410,71 +438,86 @@ class _CategoriesPageState extends State<CategoriesPage> {
     );
   }
 
+  void _navigateToCategoryProducts(Map<String, dynamic> category) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => ProductFeed(
+              categoryId: category['id'],
+              categoryName: category['name'],
+            ),
+      ),
+    );
+  }
+
   Widget _buildShimmerCategory() {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        color: const Color(0xFF1A3A6A),
+        color: const Color(0xFFEEEEEE),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Stack(
         children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-              child: Shimmer.fromColors(
-                baseColor: const Color(0xFF1A3A6A),
-                highlightColor: const Color(0xFF2A4A7A),
-                child: Container(color: Colors.white.withOpacity(0.1)),
+          Positioned.fill(
+            child: Shimmer.fromColors(
+              baseColor: const Color(0xFFEEEEEE),
+              highlightColor: Colors.white,
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  color: Colors.white,
+                ),
               ),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Shimmer.fromColors(
-                  baseColor: const Color(0xFF1A3A6A),
-                  highlightColor: const Color(0xFF2A4A7A),
-                  child: Container(
-                    height: 18,
-                    width: 120,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Shimmer.fromColors(
+                    baseColor: const Color(0xFFEEEEEE),
+                    highlightColor: Colors.white,
+                    child: Container(
+                      height: 20,
+                      width: 120,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                Shimmer.fromColors(
-                  baseColor: const Color(0xFF1A3A6A),
-                  highlightColor: const Color(0xFF2A4A7A),
-                  child: Container(
-                    height: 12,
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
+                  const SizedBox(height: 8),
+                  Shimmer.fromColors(
+                    baseColor: const Color(0xFFEEEEEE),
+                    highlightColor: Colors.white,
+                    child: Container(
+                      height: 14,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Shimmer.fromColors(
-                  baseColor: const Color(0xFF1A3A6A),
-                  highlightColor: const Color(0xFF2A4A7A),
-                  child: Container(
-                    height: 12,
-                    width: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(4),
+                  const SizedBox(height: 16),
+                  Shimmer.fromColors(
+                    baseColor: const Color(0xFFEEEEEE),
+                    highlightColor: Colors.white,
+                    child: Container(
+                      height: 36,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
