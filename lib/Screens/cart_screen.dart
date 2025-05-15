@@ -1,5 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:blorbmart2/Screens/checkout_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -9,74 +14,384 @@ class CartScreen extends StatefulWidget {
 }
 
 class _CartScreenState extends State<CartScreen> {
-  // Mock cart data
-  final List<Map<String, dynamic>> _cartItems = [
-    {
-      'id': '1',
-      'name': '6L Extra Large Capacity Air Fryer',
-      'image': 'https://images.unsplash.com/photo-1618442302325-8b5f8e3a3b0d',
-      'price': 129.99,
-      'originalPrice': 159.99,
-      'quantity': 1,
-      'color': 'Black',
-      'size': 'Standard',
-      'seller': 'Campus Appliances',
-      'inStock': true,
-    },
-    {
-      'id': '2',
-      'name': 'Wireless Bluetooth Headphones',
-      'image': 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e',
-      'price': 59.99,
-      'originalPrice': 79.99,
-      'quantity': 2,
-      'color': 'White',
-      'size': 'One Size',
-      'seller': 'TechGadgets',
-      'inStock': true,
-    },
-    {
-      'id': '3',
-      'name': 'Organic Cotton T-Shirt',
-      'image': 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab',
-      'price': 24.99,
-      'quantity': 1,
-      'color': 'Blue',
-      'size': 'M',
-      'seller': 'FashionHub',
-      'inStock': false,
-    },
-  ];
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final TextEditingController _couponController = TextEditingController();
 
   bool _showCouponField = false;
-  final TextEditingController _couponController = TextEditingController();
+  bool _isLoading = false;
   String _selectedPaymentMethod = 'Pay on Delivery';
+  List<Map<String, dynamic>> _cartItems = [];
+  double _deliveryFee = 5.99; // Fixed delivery fee
+  double _discount = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCartItems();
+  }
+
+  Future<void> _fetchCartItems() async {
+    if (_auth.currentUser == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final snapshot =
+          await _firestore
+              .collection('users')
+              .doc(_auth.currentUser!.uid)
+              .collection('cart')
+              .get();
+
+      final items = await Future.wait(
+        snapshot.docs.map((doc) async {
+          final data = doc.data();
+          // Fetch additional product details from products collection
+          final productDoc =
+              await _firestore
+                  .collection('products')
+                  .doc(data['productId'])
+                  .get();
+          final productData = productDoc.data() ?? {};
+
+          return {
+            'id': doc.id,
+            'productId': data['productId'],
+            'name': data['name'] ?? 'No Name',
+            'image': data['image'] ?? '',
+            'price': data['price']?.toDouble() ?? 0.0,
+            'originalPrice': productData['originalPrice']?.toDouble(),
+            'quantity': data['quantity'] ?? 1,
+            'color': productData['color'] ?? '',
+            'size': productData['size'] ?? '',
+            'sellerId': productData['sellerId'] ?? '',
+            'inStock': (productData['stock'] ?? 0) > 0,
+            'sellerName': productData['sellerName'] ?? 'Seller',
+          };
+        }).toList(),
+      );
+
+      if (mounted) {
+        setState(() {
+          _cartItems = items;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        _showErrorToast('Failed to load cart items');
+      }
+    }
+  }
+
+  Future<void> _updateQuantity(String itemId, int change) async {
+    if (_auth.currentUser == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final index = _cartItems.indexWhere((item) => item['id'] == itemId);
+      if (index != -1) {
+        final newQuantity = _cartItems[index]['quantity'] + change;
+
+        if (newQuantity > 0) {
+          await _firestore
+              .collection('users')
+              .doc(_auth.currentUser!.uid)
+              .collection('cart')
+              .doc(itemId)
+              .update({
+                'quantity': newQuantity,
+                'updatedAt': FieldValue.serverTimestamp(),
+              });
+
+          if (mounted) {
+            setState(() {
+              _cartItems[index]['quantity'] = newQuantity;
+            });
+          }
+        }
+      }
+    } catch (e) {
+      _showErrorToast('Failed to update quantity');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _removeItem(String itemId) async {
+    if (_auth.currentUser == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await _firestore
+          .collection('users')
+          .doc(_auth.currentUser!.uid)
+          .collection('cart')
+          .doc(itemId)
+          .delete();
+
+      if (mounted) {
+        setState(() {
+          _cartItems.removeWhere((item) => item['id'] == itemId);
+        });
+      }
+      _showSuccessToast('Item removed from cart');
+    } catch (e) {
+      _showErrorToast('Failed to remove item');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _clearCart() async {
+    if (_auth.currentUser == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final batch = _firestore.batch();
+      final cartRef = _firestore
+          .collection('users')
+          .doc(_auth.currentUser!.uid)
+          .collection('cart');
+
+      for (var item in _cartItems) {
+        batch.delete(cartRef.doc(item['id']));
+      }
+
+      await batch.commit();
+
+      if (mounted) {
+        setState(() {
+          _cartItems.clear();
+        });
+      }
+      _showSuccessToast('Cart cleared');
+    } catch (e) {
+      _showErrorToast('Failed to clear cart');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _saveForLater(String itemId) async {
+    if (_auth.currentUser == null) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final index = _cartItems.indexWhere((item) => item['id'] == itemId);
+      if (index != -1) {
+        final item = _cartItems[index];
+
+        // Add to saved items
+        await _firestore
+            .collection('users')
+            .doc(_auth.currentUser!.uid)
+            .collection('saved')
+            .doc(item['productId'])
+            .set({
+              'productId': item['productId'],
+              'name': item['name'],
+              'price': item['price'],
+              'image': item['image'],
+              'savedAt': FieldValue.serverTimestamp(),
+            });
+
+        // Remove from cart
+        await _removeItem(itemId);
+
+        _showSuccessToast('Item saved for later');
+      }
+    } catch (e) {
+      _showErrorToast('Failed to save item');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _applyCoupon() async {
+    if (_couponController.text.isEmpty) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Simulate coupon validation
+    await Future.delayed(const Duration(seconds: 1));
+
+    if (mounted) {
+      setState(() {
+        _discount = 15.00; // Example discount
+        _showCouponField = false;
+        _isLoading = false;
+      });
+      _showSuccessToast('Coupon applied successfully');
+    }
+  }
+
+  void _checkout() {
+    if (_cartItems.isEmpty) {
+      _showErrorToast('Your cart is empty');
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) => CheckoutScreen(
+              cartItems: _cartItems,
+              subtotal: _calculateSubtotal(),
+              deliveryFee: _deliveryFee,
+              discount: _discount,
+              paymentMethod: _selectedPaymentMethod,
+            ),
+      ),
+    );
+  }
+
+  double _calculateSubtotal() {
+    return _cartItems.fold(0, (sum, item) {
+      return sum + (item['price'] * item['quantity']);
+    });
+  }
+
+  double _calculateTotal() {
+    return _calculateSubtotal() + _deliveryFee - _discount;
+  }
+
+  void _showErrorToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+    );
+  }
+
+  void _showSuccessToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.green,
+      textColor: Colors.white,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    double subtotal = _calculateSubtotal();
-    double deliveryFee = 5.99; // Fixed delivery fee for example
-    double discount = 15.00; // Example discount
-    double total = subtotal + deliveryFee - discount;
+    final subtotal = _calculateSubtotal();
+    final total = _calculateTotal();
 
     return Scaffold(
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: Text('My Cart (${_cartItems.length})'),
+        backgroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          'My Cart (${_cartItems.length})',
+          style: GoogleFonts.poppins(
+            color: const Color(0xFF0A1E3D),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         actions: [
-          IconButton(icon: Icon(Icons.delete_outline), onPressed: _clearCart),
+          if (_cartItems.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.delete_outline, color: Color(0xFF0A1E3D)),
+              onPressed: _isLoading ? null : _clearCart,
+            ),
         ],
       ),
-      body: Column(
+      body: Stack(
         children: [
-          Expanded(
-            child: ListView.builder(
-              itemCount: _cartItems.length,
-              itemBuilder: (context, index) {
-                return _buildCartItem(_cartItems[index]);
-              },
-            ),
+          Column(
+            children: [
+              Expanded(
+                child:
+                    _cartItems.isEmpty
+                        ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.shopping_cart_outlined,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                'Your cart is empty',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ElevatedButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.orange,
+                                ),
+                                child: Text(
+                                  'Continue Shopping',
+                                  style: GoogleFonts.poppins(),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        : ListView.builder(
+                          itemCount: _cartItems.length,
+                          itemBuilder: (context, index) {
+                            return _buildCartItem(_cartItems[index]);
+                          },
+                        ),
+              ),
+              if (_cartItems.isNotEmpty) _buildOrderSummary(subtotal, total),
+            ],
           ),
-          _buildOrderSummary(subtotal, deliveryFee, discount, total),
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.orange),
+            ),
         ],
       ),
     );
@@ -84,10 +399,10 @@ class _CartScreenState extends State<CartScreen> {
 
   Widget _buildCartItem(Map<String, dynamic> item) {
     return Card(
-      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       elevation: 1,
       child: Padding(
-        padding: EdgeInsets.all(12),
+        padding: const EdgeInsets.all(12),
         child: Column(
           children: [
             Row(
@@ -107,13 +422,25 @@ class _CartScreenState extends State<CartScreen> {
                       imageUrl: item['image'],
                       fit: BoxFit.cover,
                       placeholder:
-                          (context, url) =>
-                              Center(child: CircularProgressIndicator()),
-                      errorWidget: (context, url, error) => Icon(Icons.error),
+                          (context, url) => Container(
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: CircularProgressIndicator(
+                                color: Colors.orange,
+                              ),
+                            ),
+                          ),
+                      errorWidget:
+                          (context, url, error) => Container(
+                            color: Colors.grey[200],
+                            child: const Center(
+                              child: Icon(Icons.error, color: Colors.grey),
+                            ),
+                          ),
                     ),
                   ),
                 ),
-                SizedBox(width: 12),
+                const SizedBox(width: 12),
 
                 // Product Details
                 Expanded(
@@ -122,53 +449,56 @@ class _CartScreenState extends State<CartScreen> {
                     children: [
                       Text(
                         item['name'],
-                        style: TextStyle(
+                        style: GoogleFonts.poppins(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       Text(
-                        'by ${item['seller']}',
-                        style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                        'by ${item['sellerName']}',
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
                       ),
-                      SizedBox(height: 4),
+                      const SizedBox(height: 4),
                       if (item['color'] != null || item['size'] != null)
                         Text(
                           '${item['color']} • ${item['size']}',
-                          style: TextStyle(
+                          style: GoogleFonts.poppins(
                             color: Colors.grey[600],
                             fontSize: 14,
                           ),
                         ),
-                      SizedBox(height: 8),
+                      const SizedBox(height: 8),
 
                       // Price and Quantity
                       Row(
                         children: [
                           Text(
-                            '\$${item['price'].toStringAsFixed(2)}',
-                            style: TextStyle(
+                            '₦${item['price'].toStringAsFixed(2)}',
+                            style: GoogleFonts.poppins(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
-                              color: Colors.blue[800],
+                              color: Colors.orange,
                             ),
                           ),
                           if (item['originalPrice'] != null)
                             Padding(
-                              padding: EdgeInsets.only(left: 8),
+                              padding: const EdgeInsets.only(left: 8),
                               child: Text(
-                                '\$${item['originalPrice'].toStringAsFixed(2)}',
-                                style: TextStyle(
+                                '₦${item['originalPrice'].toStringAsFixed(2)}',
+                                style: GoogleFonts.poppins(
                                   fontSize: 14,
                                   color: Colors.grey,
                                   decoration: TextDecoration.lineThrough,
                                 ),
                               ),
                             ),
-                          Spacer(),
+                          const Spacer(),
                           Container(
                             decoration: BoxDecoration(
                               border: Border.all(color: Colors.grey[300]!),
@@ -177,24 +507,28 @@ class _CartScreenState extends State<CartScreen> {
                             child: Row(
                               children: [
                                 IconButton(
-                                  icon: Icon(Icons.remove, size: 18),
-                                  onPressed: () {
-                                    _updateQuantity(item['id'], -1);
-                                  },
+                                  icon: const Icon(Icons.remove, size: 18),
+                                  onPressed:
+                                      _isLoading
+                                          ? null
+                                          : () =>
+                                              _updateQuantity(item['id'], -1),
                                   padding: EdgeInsets.zero,
-                                  constraints: BoxConstraints(),
+                                  constraints: const BoxConstraints(),
                                 ),
                                 Text(
                                   '${item['quantity']}',
-                                  style: TextStyle(fontSize: 16),
+                                  style: GoogleFonts.poppins(fontSize: 16),
                                 ),
                                 IconButton(
-                                  icon: Icon(Icons.add, size: 18),
-                                  onPressed: () {
-                                    _updateQuantity(item['id'], 1);
-                                  },
+                                  icon: const Icon(Icons.add, size: 18),
+                                  onPressed:
+                                      _isLoading
+                                          ? null
+                                          : () =>
+                                              _updateQuantity(item['id'], 1),
                                   padding: EdgeInsets.zero,
-                                  constraints: BoxConstraints(),
+                                  constraints: const BoxConstraints(),
                                 ),
                               ],
                             ),
@@ -206,7 +540,7 @@ class _CartScreenState extends State<CartScreen> {
                 ),
               ],
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
 
             // Stock status and actions
             Row(
@@ -216,26 +550,26 @@ class _CartScreenState extends State<CartScreen> {
                   color: item['inStock'] ? Colors.green : Colors.red,
                   size: 16,
                 ),
-                SizedBox(width: 4),
+                const SizedBox(width: 4),
                 Text(
                   item['inStock'] ? 'In Stock' : 'Out of Stock',
-                  style: TextStyle(
+                  style: GoogleFonts.poppins(
                     color: item['inStock'] ? Colors.green : Colors.red,
                   ),
                 ),
-                Spacer(),
+                const Spacer(),
                 TextButton(
-                  onPressed: () {
-                    _removeItem(item['id']);
-                  },
-                  child: Text('Remove', style: TextStyle(color: Colors.red)),
+                  onPressed: _isLoading ? null : () => _removeItem(item['id']),
+                  child: Text(
+                    'Remove',
+                    style: GoogleFonts.poppins(color: Colors.red),
+                  ),
                 ),
-                SizedBox(width: 8),
+                const SizedBox(width: 8),
                 TextButton(
-                  onPressed: () {
-                    // Save for later functionality
-                  },
-                  child: Text('Save for later'),
+                  onPressed:
+                      _isLoading ? null : () => _saveForLater(item['id']),
+                  child: Text('Save for later', style: GoogleFonts.poppins()),
                 ),
               ],
             ),
@@ -245,17 +579,12 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  Widget _buildOrderSummary(
-    double subtotal,
-    double deliveryFee,
-    double discount,
-    double total,
-  ) {
+  Widget _buildOrderSummary(double subtotal, double total) {
     return Container(
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.only(
+        borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(12),
           topRight: Radius.circular(12),
         ),
@@ -264,7 +593,7 @@ class _CartScreenState extends State<CartScreen> {
             color: Colors.grey.withOpacity(0.2),
             spreadRadius: 2,
             blurRadius: 8,
-            offset: Offset(0, -3),
+            offset: const Offset(0, -3),
           ),
         ],
       ),
@@ -273,7 +602,7 @@ class _CartScreenState extends State<CartScreen> {
           // Coupon Code Field
           if (_showCouponField)
             Padding(
-              padding: EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 12),
               child: Row(
                 children: [
                   Expanded(
@@ -281,18 +610,20 @@ class _CartScreenState extends State<CartScreen> {
                       controller: _couponController,
                       decoration: InputDecoration(
                         hintText: 'Enter coupon code',
-                        border: OutlineInputBorder(),
-                        contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                        border: const OutlineInputBorder(),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                        ),
                       ),
                     ),
                   ),
-                  SizedBox(width: 8),
+                  const SizedBox(width: 8),
                   ElevatedButton(
-                    onPressed: _applyCoupon,
+                    onPressed: _isLoading ? null : _applyCoupon,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blue[800],
+                      backgroundColor: Colors.orange,
                     ),
-                    child: Text('Apply'),
+                    child: Text('Apply', style: GoogleFonts.poppins()),
                   ),
                 ],
               ),
@@ -302,27 +633,39 @@ class _CartScreenState extends State<CartScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Subtotal', style: TextStyle(color: Colors.grey)),
-              Text('\$${subtotal.toStringAsFixed(2)}'),
+              Text('Subtotal', style: GoogleFonts.poppins(color: Colors.grey)),
+              Text(
+                '₦${subtotal.toStringAsFixed(2)}',
+                style: GoogleFonts.poppins(),
+              ),
             ],
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Delivery Fee', style: TextStyle(color: Colors.grey)),
-              Text('\$${deliveryFee.toStringAsFixed(2)}'),
+              Text(
+                'Delivery Fee',
+                style: GoogleFonts.poppins(color: Colors.grey),
+              ),
+              Text(
+                '₦${_deliveryFee.toStringAsFixed(2)}',
+                style: GoogleFonts.poppins(),
+              ),
             ],
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(
                 children: [
-                  Text('Discount', style: TextStyle(color: Colors.grey)),
+                  Text(
+                    'Discount',
+                    style: GoogleFonts.poppins(color: Colors.grey),
+                  ),
                   if (_couponController.text.isNotEmpty)
-                    Padding(
+                    const Padding(
                       padding: EdgeInsets.only(left: 4),
                       child: Icon(
                         Icons.check_circle,
@@ -333,97 +676,121 @@ class _CartScreenState extends State<CartScreen> {
                 ],
               ),
               Text(
-                '-\$${discount.toStringAsFixed(2)}',
-                style: TextStyle(color: Colors.green),
+                '-₦${_discount.toStringAsFixed(2)}',
+                style: GoogleFonts.poppins(color: Colors.green),
               ),
             ],
           ),
-          Divider(height: 24, thickness: 1),
+          const Divider(height: 24, thickness: 1),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Total',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              Text(
-                '\$${total.toStringAsFixed(2)}',
-                style: TextStyle(
+                style: GoogleFonts.poppins(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
-                  color: Colors.blue[800],
+                ),
+              ),
+              Text(
+                '₦${total.toStringAsFixed(2)}',
+                style: GoogleFonts.poppins(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: Colors.orange,
                 ),
               ),
             ],
           ),
-          SizedBox(height: 16),
+          const SizedBox(height: 16),
 
           // Payment Method Selection
           ExpansionTile(
             title: Text(
               'Payment Method',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
             ),
             children: [
               RadioListTile<String>(
-                title: Text('Pay on Delivery'),
+                title: Text('Pay on Delivery', style: GoogleFonts.poppins()),
                 value: 'Pay on Delivery',
                 groupValue: _selectedPaymentMethod,
-                onChanged: (value) {
-                  setState(() {
-                    _selectedPaymentMethod = value!;
-                  });
-                },
+                onChanged:
+                    _isLoading
+                        ? null
+                        : (value) {
+                          setState(() {
+                            _selectedPaymentMethod = value!;
+                          });
+                        },
               ),
               RadioListTile<String>(
-                title: Text('Credit/Debit Card'),
+                title: Text('Credit/Debit Card', style: GoogleFonts.poppins()),
                 value: 'Credit/Debit Card',
                 groupValue: _selectedPaymentMethod,
-                onChanged: (value) {
-                  setState(() {
-                    _selectedPaymentMethod = value!;
-                  });
-                },
+                onChanged:
+                    _isLoading
+                        ? null
+                        : (value) {
+                          setState(() {
+                            _selectedPaymentMethod = value!;
+                          });
+                        },
               ),
               RadioListTile<String>(
-                title: Text('BlorbPay Wallet'),
+                title: Text('BlorbPay Wallet', style: GoogleFonts.poppins()),
                 value: 'BlorbPay Wallet',
                 groupValue: _selectedPaymentMethod,
-                onChanged: (value) {
-                  setState(() {
-                    _selectedPaymentMethod = value!;
-                  });
-                },
+                onChanged:
+                    _isLoading
+                        ? null
+                        : (value) {
+                          setState(() {
+                            _selectedPaymentMethod = value!;
+                          });
+                        },
               ),
             ],
           ),
-          SizedBox(height: 8),
+          const SizedBox(height: 8),
 
           // Coupon and Checkout Buttons
           Row(
             children: [
               TextButton(
-                onPressed: () {
-                  setState(() {
-                    _showCouponField = !_showCouponField;
-                  });
-                },
+                onPressed:
+                    _isLoading
+                        ? null
+                        : () {
+                          setState(() {
+                            _showCouponField = !_showCouponField;
+                          });
+                        },
                 child: Row(
                   children: [
-                    Icon(Icons.local_offer, size: 18),
-                    SizedBox(width: 4),
-                    Text(_showCouponField ? 'Hide Coupon' : 'Add Coupon'),
+                    const Icon(Icons.local_offer, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      _showCouponField ? 'Hide Coupon' : 'Add Coupon',
+                      style: GoogleFonts.poppins(),
+                    ),
                   ],
                 ),
               ),
-              Spacer(),
+              const Spacer(),
               ElevatedButton(
-                onPressed: _checkout,
+                onPressed: _isLoading ? null : _checkout,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue[800],
-                  padding: EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                  backgroundColor: Colors.orange,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 12,
+                  ),
                 ),
-                child: Text('Checkout'),
+                child: Text(
+                  'Checkout',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                ),
               ),
             ],
           ),
@@ -432,101 +799,9 @@ class _CartScreenState extends State<CartScreen> {
     );
   }
 
-  double _calculateSubtotal() {
-    return _cartItems.fold(0, (sum, item) {
-      return sum + (item['price'] * item['quantity']);
-    });
-  }
-
-  void _updateQuantity(String itemId, int change) {
-    setState(() {
-      int index = _cartItems.indexWhere((item) => item['id'] == itemId);
-      if (index != -1) {
-        int newQuantity = _cartItems[index]['quantity'] + change;
-        if (newQuantity > 0) {
-          _cartItems[index]['quantity'] = newQuantity;
-        }
-      }
-    });
-  }
-
-  void _removeItem(String itemId) {
-    setState(() {
-      _cartItems.removeWhere((item) => item['id'] == itemId);
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Item removed from cart'),
-        duration: Duration(seconds: 2),
-        action: SnackBarAction(
-          label: 'UNDO',
-          onPressed: () {
-            // In a real app, you would implement undo functionality
-          },
-        ),
-      ),
-    );
-  }
-
-  void _clearCart() {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('Clear Cart'),
-          content: Text(
-            'Are you sure you want to remove all items from your cart?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  _cartItems.clear();
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Cart cleared'),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              },
-              child: Text('Clear', style: TextStyle(color: Colors.red)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _applyCoupon() {
-    // Coupon validation logic would go here
-    setState(() {
-      _showCouponField = false;
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Coupon applied successfully'),
-        duration: Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _checkout() {
-    if (_cartItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Your cart is empty'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
-    Navigator.pushNamed(context, '/checkout');
+  @override
+  void dispose() {
+    _couponController.dispose();
+    super.dispose();
   }
 }
