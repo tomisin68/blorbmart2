@@ -16,39 +16,6 @@ import 'package:location/location.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
-
-  @override
-  _HomeScreenState createState() => _HomeScreenState();
-}
-
-class _HomeScreenState extends State<HomeScreen> {
-  int _currentIndex = 0;
-  final List<Widget> _screens = [
-    const HomePage(),
-    const SavedPage(),
-    const ProductFeed(categoryId: null, categoryName: null),
-    const ProfilePage(),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A1E3D),
-      body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: BottomNavBar(
-        currentIndex: _currentIndex,
-        onTabChange: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-      ),
-    );
-  }
-}
-
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -77,6 +44,14 @@ class _HomePageState extends State<HomePage> {
   bool _hasMoreProducts = true;
   DocumentSnapshot? _lastProductDocument;
   bool _isFetchingMore = false;
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [
+    const _HomeContent(),
+    const SavedPage(),
+    const ProductFeed(categoryId: null, categoryName: null),
+    const ProfilePage(),
+  ];
 
   @override
   void initState() {
@@ -422,145 +397,14 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1E3D),
-        elevation: 0,
-        title: Container(
-          height: 45,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
-          ),
-          child: TextField(
-            style: GoogleFonts.poppins(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Search on Blorbmart',
-              hintStyle: GoogleFonts.poppins(color: Colors.white70),
-              border: InputBorder.none,
-              prefixIcon: const Icon(Icons.search, color: Colors.white70),
-              contentPadding: const EdgeInsets.symmetric(vertical: 12),
-            ),
-          ),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.chat, color: Colors.white),
-            onPressed: () {},
-          ),
-          Stack(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.shopping_cart, color: Colors.white),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const CartScreen()),
-                  );
-                },
-              ),
-              if (_cartCount > 0)
-                Positioned(
-                  right: 8,
-                  top: 5,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 16,
-                      minHeight: 16,
-                    ),
-                    child: Text(
-                      '$_cartCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 10),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        key: _refreshIndicatorKey,
-        onRefresh: _initializeData,
-        child: CustomScrollView(
-          controller: _scrollController,
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildSectionHeader(
-                    icon: Icons.location_on,
-                    title: 'Nearby Products & Stores',
-                    subtitle:
-                        _currentLocation != null
-                            ? 'Lat: ${_currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${_currentLocation!.longitude!.toStringAsFixed(4)}'
-                            : null,
-                    onSeeAll: () {},
-                  ),
-                  _buildImageCarousel(),
-                  _buildSectionHeader(
-                    title: 'Categories',
-                    onSeeAll: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CategoriesPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildCategories(),
-                  _buildFlashSaleBanner(),
-                  _buildSectionHeader(
-                    title: 'Trending Products',
-                    onSeeAll: () {},
-                  ),
-                ],
-              ),
-            ),
-            _buildProductsList(),
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(title: 'Sponsored', onSeeAll: () {}),
-            ),
-            _buildSponsoredProductsList(),
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(title: 'Top Sellers', onSeeAll: () {}),
-            ),
-            SliverToBoxAdapter(child: _buildTopSellers()),
-            SliverToBoxAdapter(
-              child: _buildSectionHeader(
-                title: 'Official Stores',
-                onSeeAll: () {},
-              ),
-            ),
-            SliverToBoxAdapter(child: _buildOfficialStores()),
-            SliverToBoxAdapter(
-              child:
-                  _isFetchingMore
-                      ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.orange,
-                          ),
-                        ),
-                      )
-                      : const SizedBox(height: 80),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Colors.orange,
-        onPressed: () => _showBecomeSellerDialog(context),
-        child: const Icon(Icons.store, color: Colors.white),
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: BottomNavBar(
+        currentIndex: _currentIndex,
+        onTabChange: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
       ),
     );
   }
@@ -1360,7 +1204,7 @@ class _HomePageState extends State<HomePage> {
                     ElevatedButton(
                       onPressed: () async {
                         Navigator.pop(context);
-                        const url = 'https://market-monitor-five.vercel.app';
+                        const url = 'https://blorb.vercel.app';
                         if (await canLaunchUrl(Uri.parse(url))) {
                           await launchUrl(Uri.parse(url));
                         } else {
@@ -1415,6 +1259,165 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _scrollController.dispose();
     super.dispose();
+  }
+}
+
+class _HomeContent extends StatelessWidget {
+  const _HomeContent();
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.findAncestorStateOfType<_HomePageState>()!;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A1E3D),
+      appBar: AppBar(
+        backgroundColor: const Color(0xFF0A1E3D),
+        elevation: 0,
+        title: Container(
+          height: 45,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
+          ),
+          child: TextField(
+            style: GoogleFonts.poppins(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Search on Blorbmart',
+              hintStyle: GoogleFonts.poppins(color: Colors.white70),
+              border: InputBorder.none,
+              prefixIcon: const Icon(Icons.search, color: Colors.white70),
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.notifications, color: Colors.white),
+            onPressed: () {},
+          ),
+          Stack(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.shopping_cart, color: Colors.white),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const CartScreen()),
+                  );
+                },
+              ),
+              if (state._cartCount > 0)
+                Positioned(
+                  right: 8,
+                  top: 5,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    constraints: const BoxConstraints(
+                      minWidth: 16,
+                      minHeight: 16,
+                    ),
+                    child: Text(
+                      '${state._cartCount}',
+                      style: const TextStyle(color: Colors.white, fontSize: 10),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
+      body: RefreshIndicator(
+        key: state._refreshIndicatorKey,
+        onRefresh: state._initializeData,
+        child: CustomScrollView(
+          controller: state._scrollController,
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  state._buildSectionHeader(
+                    icon: Icons.location_on,
+                    title: 'Nearby Products & Stores',
+                    subtitle:
+                        state._currentLocation != null
+                            ? 'Lat: ${state._currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${state._currentLocation!.longitude!.toStringAsFixed(4)}'
+                            : null,
+                    onSeeAll: () {},
+                  ),
+                  state._buildImageCarousel(),
+                  state._buildSectionHeader(
+                    title: 'Categories',
+                    onSeeAll: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const CategoriesPage(),
+                        ),
+                      );
+                    },
+                  ),
+                  state._buildCategories(),
+                  state._buildFlashSaleBanner(),
+                  state._buildSectionHeader(
+                    title: 'Trending Products',
+                    onSeeAll: () {},
+                  ),
+                ],
+              ),
+            ),
+            state._buildProductsList(),
+            SliverToBoxAdapter(
+              child: state._buildSectionHeader(
+                title: 'Sponsored',
+                onSeeAll: () {},
+              ),
+            ),
+            state._buildSponsoredProductsList(),
+            SliverToBoxAdapter(
+              child: state._buildSectionHeader(
+                title: 'Top Sellers',
+                onSeeAll: () {},
+              ),
+            ),
+            SliverToBoxAdapter(child: state._buildTopSellers()),
+            SliverToBoxAdapter(
+              child: state._buildSectionHeader(
+                title: 'Official Stores',
+                onSeeAll: () {},
+              ),
+            ),
+            SliverToBoxAdapter(child: state._buildOfficialStores()),
+            SliverToBoxAdapter(
+              child:
+                  state._isFetchingMore
+                      ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.orange,
+                          ),
+                        ),
+                      )
+                      : const SizedBox(height: 80),
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.orange,
+        onPressed: () => state._showBecomeSellerDialog(context),
+        child: const Icon(Icons.store, color: Colors.white),
+      ),
+    );
   }
 }
 
