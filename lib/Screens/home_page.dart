@@ -1,3 +1,4 @@
+import 'package:blorbmart2/Screens/Categories.dart';
 import 'package:blorbmart2/Screens/cart_screen.dart';
 import 'package:blorbmart2/Screens/product_details.dart';
 import 'package:blorbmart2/Screens/product_feed.dart';
@@ -27,7 +28,7 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     const HomePage(),
     const SavedPage(),
-    const ProductFeed(),
+    const ProductFeed(categoryId: null, categoryName: null),
     const ProfilePage(),
   ];
 
@@ -65,45 +66,13 @@ class _HomePageState extends State<HomePage> {
 
   List<String> _carouselImages = [];
   bool _isLoadingCarousel = true;
-
+  bool _isLoadingCategories = true;
+  List<Map<String, dynamic>> _categories = [];
   // ignore: unused_field
   final bool _isLoading = false;
   int _currentCarouselIndex = 0;
   int _cartCount = 0;
   LocationData? _currentLocation;
-
-  final List<Map<String, dynamic>> _categories = [
-    {
-      'name': 'Appliances',
-      'icon': Icons.kitchen,
-      'image': 'https://images.unsplash.com/photo-1586449480533-bf4d8f579e6e',
-    },
-    {
-      'name': 'Clothes',
-      'icon': Icons.shopping_bag,
-      'image': 'https://images.unsplash.com/photo-1489987707025-afc232f7ea0f',
-    },
-    {
-      'name': 'Books',
-      'icon': Icons.menu_book,
-      'image': 'https://images.unsplash.com/photo-1544947950-fa07a98d237f',
-    },
-    {
-      'name': 'Cosmetics',
-      'icon': Icons.spa,
-      'image': 'https://images.unsplash.com/photo-1522335789203-aabd1fc54bc9',
-    },
-    {
-      'name': 'Gadgets',
-      'icon': Icons.phone_iphone,
-      'image': 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c',
-    },
-    {
-      'name': 'Furniture',
-      'icon': Icons.chair,
-      'image': 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc',
-    },
-  ];
 
   final List<Map<String, dynamic>> _products = [
     {
@@ -195,6 +164,37 @@ class _HomePageState extends State<HomePage> {
     _fetchCartCount();
     _getCurrentLocation();
     _fetchCarouselImages();
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final snapshot = await _firestore.collection('categories').limit(6).get();
+      final categories =
+          snapshot.docs.map((doc) {
+            final data = doc.data();
+            return {
+              'id': doc.id,
+              'name': data['name'] ?? 'No Name',
+              'description': data['description'] ?? '',
+              'imageUrl': data['imageUrl'] ?? '',
+            };
+          }).toList();
+
+      if (mounted) {
+        setState(() {
+          _categories = categories;
+          _isLoadingCategories = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingCategories = false;
+        });
+      }
+      _showErrorToast('Failed to load categories');
+    }
   }
 
   Future<void> _fetchCarouselImages() async {
@@ -394,6 +394,7 @@ class _HomePageState extends State<HomePage> {
             _fetchCartCount(),
             _getCurrentLocation(),
             _fetchCarouselImages(),
+            _fetchCategories(),
           ]);
         },
         child: SingleChildScrollView(
@@ -416,7 +417,17 @@ class _HomePageState extends State<HomePage> {
               _buildImageCarousel(),
 
               // Categories section
-              _buildSectionHeader(title: 'Categories', onSeeAll: () {}),
+              _buildSectionHeader(
+                title: 'Categories',
+                onSeeAll: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CategoriesPage(),
+                    ),
+                  );
+                },
+              ),
               _buildCategories(),
 
               // Flash sale banner
@@ -606,6 +617,40 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildCategories() {
+    if (_isLoadingCategories) {
+      return SizedBox(
+        height: 100,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          itemCount: 6, // Show 6 shimmer items
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Shimmer.fromColors(
+                baseColor: Colors.grey[800]!,
+                highlightColor: Colors.grey[700]!,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(width: 60, height: 10, color: Colors.white),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return SizedBox(
       height: 100,
       child: ListView.builder(
@@ -613,33 +658,57 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         itemCount: _categories.length,
         itemBuilder: (context, index) {
+          final category = _categories[index];
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Column(
               children: [
-                Container(
-                  width: 70,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFFFFA726), Color(0xFFFB8C00)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                GestureDetector(
+                  onTap: () {
+                    // Navigate to category products
+                  },
+                  child: Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      image:
+                          category['imageUrl'] != null &&
+                                  category['imageUrl'].isNotEmpty
+                              ? DecorationImage(
+                                image: CachedNetworkImageProvider(
+                                  category['imageUrl'],
+                                ),
+                                fit: BoxFit.cover,
+                              )
+                              : null,
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Icon(
-                      _categories[index]['icon'],
-                      color: Colors.white,
-                      size: 30,
-                    ),
+                    child:
+                        category['imageUrl'] == null ||
+                                category['imageUrl'].isEmpty
+                            ? Center(
+                              child: Icon(
+                                Icons.category,
+                                color: Colors.white,
+                                size: 30,
+                              ),
+                            )
+                            : null,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  _categories[index]['name'],
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
+                SizedBox(
+                  width: 70,
+                  child: Text(
+                    category['name'],
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 12,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               ],
             ),
@@ -714,7 +783,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildProductList(bool sponsored) {
     return SizedBox(
-      height: 220, // Increased height to accommodate better card layout
+      height: 220,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -733,7 +802,7 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
-        width: 160, // Slightly wider for better content fit
+        width: 160,
         child: Card(
           color: const Color(0xFF1A3A6A),
           shape: RoundedRectangleBorder(
@@ -837,7 +906,7 @@ class _HomePageState extends State<HomePage> {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            minimumSize: const Size(0, 36), // Fixed height
+                            minimumSize: const Size(0, 36),
                           ),
                           child: Text(
                             'Add to Cart',
@@ -1115,7 +1184,7 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class BottomNavBar extends StatelessWidget {
+class BottomNavBar extends StatefulWidget {
   final int currentIndex;
   final Function(int) onTabChange;
 
@@ -1124,6 +1193,29 @@ class BottomNavBar extends StatelessWidget {
     required this.currentIndex,
     required this.onTabChange,
   });
+
+  @override
+  State<BottomNavBar> createState() => _BottomNavBarState();
+}
+
+class _BottomNavBarState extends State<BottomNavBar> {
+  late int _currentIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.currentIndex;
+  }
+
+  @override
+  void didUpdateWidget(covariant BottomNavBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.currentIndex != _currentIndex) {
+      setState(() {
+        _currentIndex = widget.currentIndex;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1152,29 +1244,29 @@ class BottomNavBar extends StatelessWidget {
                 icon: Icons.home_rounded,
                 label: 'Home',
                 index: 0,
-                isSelected: currentIndex == 0,
-                onTap: () => onTabChange(0),
+                isSelected: _currentIndex == 0,
+                onTap: () => widget.onTabChange(0),
               ),
               _buildNavItem(
                 icon: Icons.bookmark_rounded,
                 label: 'Saved',
                 index: 1,
-                isSelected: currentIndex == 1,
-                onTap: () => onTabChange(1),
+                isSelected: _currentIndex == 1,
+                onTap: () => widget.onTabChange(1),
               ),
               _buildNavItem(
                 icon: Icons.search_rounded,
                 label: 'Search',
                 index: 2,
-                isSelected: currentIndex == 2,
-                onTap: () => onTabChange(2),
+                isSelected: _currentIndex == 2,
+                onTap: () => widget.onTabChange(2),
               ),
               _buildNavItem(
                 icon: Icons.person_rounded,
                 label: 'Profile',
                 index: 3,
-                isSelected: currentIndex == 3,
-                onTap: () => onTabChange(3),
+                isSelected: _currentIndex == 3,
+                onTap: () => widget.onTabChange(3),
               ),
             ],
           ),
