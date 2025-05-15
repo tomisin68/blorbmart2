@@ -7,6 +7,7 @@ import 'package:blorbmart2/saved_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -24,7 +25,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
-
   final List<Widget> _screens = [
     const HomePage(),
     const SavedPage(),
@@ -36,7 +36,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF0A1E3D),
-      body: _screens[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
       bottomNavigationBar: BottomNavBar(
         currentIndex: _currentIndex,
         onTabChange: (index) {
@@ -57,13 +60,11 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
-      GlobalKey<RefreshIndicatorState>();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final PageController _carouselController = PageController();
   final Location _location = Location();
   final ScrollController _scrollController = ScrollController();
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey();
 
   List<String> _carouselImages = [];
   bool _isLoadingCarousel = true;
@@ -76,62 +77,72 @@ class _HomePageState extends State<HomePage> {
   int _cartCount = 0;
   LocationData? _currentLocation;
   final DateTime _flashSaleEnd = DateTime.now().add(const Duration(hours: 2));
+  bool _hasMoreProducts = true;
+  DocumentSnapshot? _lastProductDocument;
+  bool _isFetchingMore = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchInitialData();
+    _initializeData();
     _setupScrollListener();
   }
 
-  Future<void> _fetchInitialData() async {
+  Future<void> _initializeData() async {
     await Future.wait([
       _fetchCartCount(),
       _getCurrentLocation(),
       _fetchCarouselImages(),
       _fetchCategories(),
-      _fetchRandomProducts(),
+      _fetchInitialProducts(),
     ]);
   }
 
   void _setupScrollListener() {
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels ==
-          _scrollController.position.maxScrollExtent) {
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent - 200 &&
+          !_isFetchingMore &&
+          _hasMoreProducts) {
         _fetchMoreProducts();
       }
     });
   }
 
-  Future<void> _fetchRandomProducts() async {
-    try {
-      final snapshot =
-          await _firestore
-              .collection('products')
-              .where('approved', isEqualTo: true)
-              .orderBy('timestamp', descending: true)
-              .limit(10)
-              .get();
+  Future<void> _fetchInitialProducts() async {
+    if (!mounted) return;
+    setState(() => _isLoadingProducts = true);
 
-      final products =
-          snapshot.docs.map((doc) {
-            final data = doc.data();
-            return {
-              'id': doc.id,
-              'name': data['name'] ?? 'No Name',
-              'price': data['price']?.toDouble() ?? 0.0,
-              'image':
-                  data['imageUrls'] is List && data['imageUrls'].isNotEmpty
-                      ? data['imageUrls'][0]
-                      : '',
-              'stock': data['stock'] ?? 0,
-              'sponsored': data['sponsored'] ?? false,
-              'description': data['description'] ?? '',
-              'category': data['category'] ?? '',
-              'sellerId': data['sellerId'] ?? '',
-              'timestamp': data['timestamp'] ?? Timestamp.now(),
-            };
-          }).toList();
+    try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult == ConnectivityResult.none) {
+        if (mounted) {
+          _showErrorToast('No internet connection');
+          setState(() => _isLoadingProducts = false);
+        }
+        return;
+      }
+
+      final query = _firestore
+          .collection('products')
+          .orderBy('createdAt', descending: true)
+          .limit(10);
+
+      final snapshot = await query.get();
+
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isLoadingProducts = false;
+            _hasMoreProducts = false;
+          });
+        }
+        return;
+      }
+
+      _lastProductDocument = snapshot.docs.last;
+
+      final products = await _parseProductDocuments(snapshot.docs);
 
       if (mounted) {
         setState(() {
@@ -140,76 +151,97 @@ class _HomePageState extends State<HomePage> {
           _isLoadingProducts = false;
         });
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching products: $e\n$stackTrace');
       if (mounted) {
-        setState(() {
-          _isLoadingProducts = false;
-        });
+        setState(() => _isLoadingProducts = false);
+        _showErrorToast('Failed to load products');
       }
-      _showErrorToast('Failed to load products');
     }
   }
 
   Future<void> _fetchMoreProducts() async {
-    if (_isLoadingProducts || _products.isEmpty) return;
+    if (_isFetchingMore || !_hasMoreProducts) return;
+
+    if (!mounted) return;
+    setState(() => _isFetchingMore = true);
 
     try {
-      final lastProduct = _products.last;
-      final lastTimestamp = lastProduct['timestamp'] as Timestamp;
+      final query = _firestore
+          .collection('products')
+          .orderBy('createdAt', descending: true)
+          .startAfterDocument(_lastProductDocument!)
+          .limit(10);
 
-      final snapshot =
-          await _firestore
-              .collection('products')
-              .where('approved', isEqualTo: true)
-              .orderBy('timestamp', descending: true)
-              .startAfter([lastTimestamp])
-              .limit(10)
-              .get();
+      final snapshot = await query.get();
 
-      final newProducts =
-          snapshot.docs.map((doc) {
-            final data = doc.data();
-            return {
-              'id': doc.id,
-              'name': data['name'] ?? 'No Name',
-              'price': data['price']?.toDouble() ?? 0.0,
-              'image':
-                  data['imageUrls'] is List && data['imageUrls'].isNotEmpty
-                      ? data['imageUrls'][0]
-                      : '',
-              'stock': data['stock'] ?? 0,
-              'sponsored': data['sponsored'] ?? false,
-              'description': data['description'] ?? '',
-              'category': data['category'] ?? '',
-              'sellerId': data['sellerId'] ?? '',
-              'timestamp': data['timestamp'] ?? Timestamp.now(),
-            };
-          }).toList();
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          setState(() => _hasMoreProducts = false);
+        }
+        return;
+      }
+
+      _lastProductDocument = snapshot.docs.last;
+
+      final newProducts = await _parseProductDocuments(snapshot.docs);
 
       if (mounted && newProducts.isNotEmpty) {
         setState(() {
           _products.addAll(newProducts.where((p) => !p['sponsored']));
           _sponsoredProducts.addAll(newProducts.where((p) => p['sponsored']));
+          _isFetchingMore = false;
         });
       }
-    } catch (e) {
-      _showErrorToast('Failed to load more products');
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching more products: $e\n$stackTrace');
+      if (mounted) {
+        setState(() => _isFetchingMore = false);
+        _showErrorToast('Failed to load more products');
+      }
     }
   }
 
+  Future<List<Map<String, dynamic>>> _parseProductDocuments(
+      List<DocumentSnapshot> docs) async {
+    return docs.map((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      return {
+        'id': doc.id,
+        'name': data['name'] ?? 'No Name',
+        'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+        'image': data['images'] is List && data['images'].isNotEmpty
+            ? data['images'][0]
+            : '',
+        'stock': data['stock'] ?? 0,
+        'sponsored': data['sponsored'] ?? false,
+        'description': data['description'] ?? '',
+        'category': data['category'] ?? '',
+        'sellerId': data['sellerId'] ?? '',
+        'timestamp': data['createdAt'] ?? Timestamp.now(),
+      };
+    }).toList();
+  }
+
   Future<void> _fetchCategories() async {
+    if (!mounted) return;
+    setState(() => _isLoadingCategories = true);
+
     try {
-      final snapshot = await _firestore.collection('categories').limit(6).get();
-      final categories =
-          snapshot.docs.map((doc) {
-            final data = doc.data();
-            return {
-              'id': doc.id,
-              'name': data['name'] ?? 'No Name',
-              'description': data['description'] ?? '',
-              'imageUrl': data['imageUrl'] ?? '',
-            };
-          }).toList();
+      final snapshot = await _firestore
+          .collection('categories')
+          .limit(6)
+          .get(const GetOptions(source: Source.cache));
+
+      final categories = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          'name': data['name'] ?? 'No Name',
+          'description': data['description'] ?? '',
+          'imageUrl': data['imageUrl'] ?? '',
+        };
+      }).toList();
 
       if (mounted) {
         setState(() {
@@ -218,23 +250,27 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (e) {
+      debugPrint('Error fetching categories: $e');
       if (mounted) {
-        setState(() {
-          _isLoadingCategories = false;
-        });
+        setState(() => _isLoadingCategories = false);
+        _showErrorToast('Failed to load categories');
       }
-      _showErrorToast('Failed to load categories');
     }
   }
 
   Future<void> _fetchCarouselImages() async {
+    if (!mounted) return;
+    setState(() => _isLoadingCarousel = true);
+
     try {
-      final snapshot = await _firestore.collection('carouselImages').get();
-      final images =
-          snapshot.docs
-              .map((doc) => doc.data()['imageurl'] as String? ?? '')
-              .where((url) => url.isNotEmpty)
-              .toList();
+      final snapshot = await _firestore
+          .collection('carouselImages')
+          .get(const GetOptions(source: Source.cache));
+
+      final images = snapshot.docs
+          .map((doc) => doc.data()['imageurl'] as String? ?? '')
+          .where((url) => url.isNotEmpty)
+          .toList();
 
       if (mounted) {
         setState(() {
@@ -243,24 +279,23 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (e) {
+      debugPrint('Error fetching carousel images: $e');
       if (mounted) {
-        setState(() {
-          _isLoadingCarousel = false;
-        });
+        setState(() => _isLoadingCarousel = false);
+        _showErrorToast('Failed to load carousel images');
       }
-      _showErrorToast('Failed to load carousel images');
     }
   }
 
   Future<void> _getCurrentLocation() async {
     try {
-      bool serviceEnabled = await _location.serviceEnabled();
+      final serviceEnabled = await _location.serviceEnabled();
       if (!serviceEnabled) {
-        serviceEnabled = await _location.requestService();
-        if (!serviceEnabled) return;
+        final enabled = await _location.requestService();
+        if (!enabled) return;
       }
 
-      PermissionStatus permissionGranted = await _location.hasPermission();
+      var permissionGranted = await _location.hasPermission();
       if (permissionGranted == PermissionStatus.denied) {
         permissionGranted = await _location.requestPermission();
         if (permissionGranted != PermissionStatus.granted) return;
@@ -268,12 +303,10 @@ class _HomePageState extends State<HomePage> {
 
       final locationData = await _location.getLocation();
       if (mounted) {
-        setState(() {
-          _currentLocation = locationData;
-        });
+        setState(() => _currentLocation = locationData);
       }
     } catch (e) {
-      _showErrorToast('Failed to get location');
+      debugPrint('Error getting location: $e');
     }
   }
 
@@ -281,19 +314,17 @@ class _HomePageState extends State<HomePage> {
     if (_auth.currentUser == null) return;
 
     try {
-      final doc =
-          await _firestore
-              .collection('users')
-              .doc(_auth.currentUser!.uid)
-              .collection('cart')
-              .get();
+      final doc = await _firestore
+          .collection('users')
+          .doc(_auth.currentUser!.uid)
+          .collection('cart')
+          .get(const GetOptions(source: Source.cache));
+
       if (mounted) {
-        setState(() {
-          _cartCount = doc.size;
-        });
+        setState(() => _cartCount = doc.size);
       }
     } catch (e) {
-      if (mounted) _showErrorToast('Failed to load cart count');
+      debugPrint('Error fetching cart count: $e');
     }
   }
 
@@ -320,9 +351,10 @@ class _HomePageState extends State<HomePage> {
 
       if (mounted) {
         setState(() => _cartCount++);
+        _showSuccessToast('${product['name']} added to cart');
       }
-      _showSuccessToast('${product['name']} added to cart');
     } catch (e) {
+      debugPrint('Error adding to cart: $e');
       _showErrorToast('Failed to add to cart');
     }
   }
@@ -355,6 +387,7 @@ class _HomePageState extends State<HomePage> {
         _showSuccessToast('${product['name']} saved for later');
       }
     } catch (e) {
+      debugPrint('Error toggling saved product: $e');
       _showErrorToast('Failed to update saved status');
     }
   }
@@ -380,7 +413,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   String _formatCountdown() {
-    Duration remaining = _flashSaleEnd.difference(DateTime.now());
+    final remaining = _flashSaleEnd.difference(DateTime.now());
     return '${remaining.inHours}:${(remaining.inMinutes % 60).toString().padLeft(2, '0')}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}';
   }
 
@@ -452,7 +485,7 @@ class _HomePageState extends State<HomePage> {
       ),
       body: RefreshIndicator(
         key: _refreshIndicatorKey,
-        onRefresh: _fetchInitialData,
+        onRefresh: _initializeData,
         child: CustomScrollView(
           controller: _scrollController,
           physics: const BouncingScrollPhysics(),
@@ -461,21 +494,15 @@ class _HomePageState extends State<HomePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Nearby feeds section
                   _buildSectionHeader(
                     icon: Icons.location_on,
                     title: 'Nearby Products & Stores',
-                    subtitle:
-                        _currentLocation != null
-                            ? 'Lat: ${_currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${_currentLocation!.longitude!.toStringAsFixed(4)}'
-                            : null,
+                    subtitle: _currentLocation != null
+                        ? 'Lat: ${_currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${_currentLocation!.longitude!.toStringAsFixed(4)}'
+                        : null,
                     onSeeAll: () {},
                   ),
-
-                  // Carousel slider
                   _buildImageCarousel(),
-
-                  // Categories section
                   _buildSectionHeader(
                     title: 'Categories',
                     onSeeAll: () {
@@ -488,11 +515,7 @@ class _HomePageState extends State<HomePage> {
                     },
                   ),
                   _buildCategories(),
-
-                  // Flash sale banner
                   _buildFlashSaleBanner(),
-
-                  // Products section
                   _buildSectionHeader(
                     title: 'Trending Products',
                     onSeeAll: () {},
@@ -500,105 +523,15 @@ class _HomePageState extends State<HomePage> {
                 ],
               ),
             ),
-
-            // Trending products grid
-            _isLoadingProducts
-                ? SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 220,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: 4,
-                      itemBuilder: (context, index) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: SizedBox(
-                            width: 160,
-                            child: Shimmer.fromColors(
-                              baseColor: Colors.grey[800]!,
-                              highlightColor: Colors.grey[700]!,
-                              child: Card(
-                                color: const Color(0xFF1A3A6A),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                )
-                : SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 220,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: _products.length,
-                      itemBuilder: (context, index) {
-                        return _buildProductCard(_products[index]);
-                      },
-                    ),
-                  ),
-                ),
-
-            // Sponsored products section
+            _buildProductsList(),
             SliverToBoxAdapter(
               child: _buildSectionHeader(title: 'Sponsored', onSeeAll: () {}),
             ),
-            _isLoadingProducts
-                ? SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 220,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: 2,
-                      itemBuilder: (context, index) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: SizedBox(
-                            width: 160,
-                            child: Shimmer.fromColors(
-                              baseColor: Colors.grey[800]!,
-                              highlightColor: Colors.grey[700]!,
-                              child: Card(
-                                color: const Color(0xFF1A3A6A),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                )
-                : SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 220,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: _sponsoredProducts.length,
-                      itemBuilder: (context, index) {
-                        return _buildProductCard(_sponsoredProducts[index]);
-                      },
-                    ),
-                  ),
-                ),
-
-            // Top sellers section
+            _buildSponsoredProductsList(),
             SliverToBoxAdapter(
               child: _buildSectionHeader(title: 'Top Sellers', onSeeAll: () {}),
             ),
             SliverToBoxAdapter(child: _buildTopSellers()),
-
-            // Official stores section
             SliverToBoxAdapter(
               child: _buildSectionHeader(
                 title: 'Official Stores',
@@ -606,20 +539,17 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             SliverToBoxAdapter(child: _buildOfficialStores()),
-
-            // Loading indicator for more products
             SliverToBoxAdapter(
-              child:
-                  _isLoadingProducts && _products.isNotEmpty
-                      ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.orange,
-                          ),
+              child: _isFetchingMore
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          color: Colors.orange,
                         ),
-                      )
-                      : const SizedBox(height: 80),
+                      ),
+                    )
+                  : const SizedBox(height: 80),
             ),
           ],
         ),
@@ -704,27 +634,15 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_carouselImages.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Container(
-          height: 180,
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Center(
-            child: Icon(Icons.error_outline, color: Colors.white),
-          ),
-        ),
-      );
+      return const SizedBox.shrink();
     }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         children: [
-          CarouselSlider(
+          CarouselSlider.builder(
+            itemCount: _carouselImages.length,
             options: CarouselOptions(
               height: 180,
               autoPlay: true,
@@ -734,52 +652,44 @@ class _HomePageState extends State<HomePage> {
                 setState(() => _currentCarouselIndex = index);
               },
             ),
-            items:
-                _carouselImages.map((imageUrl) {
-                  return Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 5),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
+            itemBuilder: (context, index, _) {
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: _carouselImages[index],
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) =>
+                        Container(color: Colors.white.withOpacity(0.1)),
+                    errorWidget: (_, __, ___) => Container(
+                      color: Colors.white.withOpacity(0.1),
+                      child: const Icon(Icons.error, color: Colors.white),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        fit: BoxFit.cover,
-                        placeholder:
-                            (_, __) =>
-                                Container(color: Colors.white.withOpacity(0.1)),
-                        errorWidget:
-                            (_, __, ___) => Container(
-                              color: Colors.white.withOpacity(0.1),
-                              child: const Icon(
-                                Icons.error,
-                                color: Colors.white,
-                              ),
-                            ),
-                      ),
-                    ),
-                  );
-                }).toList(),
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
-            children:
-                _carouselImages.asMap().entries.map((entry) {
-                  return Container(
-                    width: 8,
-                    height: 8,
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color:
-                          _currentCarouselIndex == entry.key
-                              ? Colors.orange
-                              : Colors.white.withOpacity(0.4),
-                    ),
-                  );
-                }).toList(),
+            children: _carouselImages.asMap().entries.map((entry) {
+              return Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _currentCarouselIndex == entry.key
+                      ? Colors.orange
+                      : Colors.white.withOpacity(0.4),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -838,11 +748,10 @@ class _HomePageState extends State<HomePage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder:
-                            (context) => ProductFeed(
-                              categoryId: category['id'],
-                              categoryName: category['name'],
-                            ),
+                        builder: (context) => ProductFeed(
+                          categoryId: category['id'],
+                          categoryName: category['name'],
+                        ),
                       ),
                     );
                   },
@@ -851,28 +760,26 @@ class _HomePageState extends State<HomePage> {
                     height: 70,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      image:
-                          category['imageUrl'] != null &&
-                                  category['imageUrl'].isNotEmpty
-                              ? DecorationImage(
-                                image: CachedNetworkImageProvider(
-                                  category['imageUrl'],
-                                ),
-                                fit: BoxFit.cover,
-                              )
-                              : null,
-                    ),
-                    child:
-                        category['imageUrl'] == null ||
-                                category['imageUrl'].isEmpty
-                            ? Center(
-                              child: Icon(
-                                Icons.category,
-                                color: Colors.white,
-                                size: 30,
+                      image: category['imageUrl'] != null &&
+                              category['imageUrl'].isNotEmpty
+                          ? DecorationImage(
+                              image: CachedNetworkImageProvider(
+                                category['imageUrl'],
                               ),
+                              fit: BoxFit.cover,
                             )
-                            : null,
+                          : null,
+                    ),
+                    child: category['imageUrl'] == null ||
+                            category['imageUrl'].isEmpty
+                        ? Center(
+                            child: Icon(
+                              Icons.category,
+                              color: Colors.white,
+                              size: 30,
+                            ),
+                          )
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -950,12 +857,139 @@ class _HomePageState extends State<HomePage> {
             child: Text(
               'Shop Now',
               style: GoogleFonts.poppins(
-                color: const Color(0xFFFB8C00),
+                color: Color(0xFFFB8C00),
                 fontWeight: FontWeight.bold,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProductsList() {
+    if (_isLoadingProducts) {
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 220,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: 4,
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                  width: 160,
+                  child: Shimmer.fromColors(
+                    baseColor: Colors.grey[800]!,
+                    highlightColor: Colors.grey[700]!,
+                    child: Card(
+                      color: const Color(0xFF1A3A6A),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    if (_products.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Container(
+          height: 200,
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'No products found',
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 18),
+                ),
+                TextButton(
+                  onPressed: _fetchInitialProducts,
+                  child: Text(
+                    'Retry',
+                    style: GoogleFonts.poppins(color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ));
+    }
+
+    return SliverToBoxAdapter(
+      child: SizedBox(
+        height: 220,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          itemCount: _products.length,
+          itemBuilder: (context, index) {
+            return _buildProductCard(_products[index]);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSponsoredProductsList() {
+    if (_isLoadingProducts) {
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 220,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: 2,
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                  width: 160,
+                  child: Shimmer.fromColors(
+                    baseColor: Colors.grey[800]!,
+                    highlightColor: Colors.grey[700]!,
+                    child: Card(
+                      color: const Color(0xFF1A3A6A),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    if (_sponsoredProducts.isEmpty) {
+      return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
+
+    return SliverToBoxAdapter(
+      child: SizedBox(
+        height: 220,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          itemCount: _sponsoredProducts.length,
+          itemBuilder: (context, index) {
+            return _buildProductCard(_sponsoredProducts[index]);
+          },
+        ),
       ),
     );
   }
@@ -995,18 +1029,12 @@ class _HomePageState extends State<HomePage> {
                         child: CachedNetworkImage(
                           imageUrl: product['image'],
                           fit: BoxFit.cover,
-                          placeholder:
-                              (_, __) => Container(
-                                color: Colors.white.withOpacity(0.1),
-                              ),
-                          errorWidget:
-                              (_, __, ___) => Container(
-                                color: Colors.white.withOpacity(0.1),
-                                child: const Icon(
-                                  Icons.error,
-                                  color: Colors.white,
-                                ),
-                              ),
+                          placeholder: (_, __) =>
+                              Container(color: Colors.white.withOpacity(0.1)),
+                          errorWidget: (_, __, ___) => Container(
+                            color: Colors.white.withOpacity(0.1),
+                            child: const Icon(Icons.error, color: Colors.white),
+                          ),
                         ),
                       ),
                     ),
@@ -1039,9 +1067,7 @@ class _HomePageState extends State<HomePage> {
                               onPressed: () => _addToCart(product),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: Colors.orange,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8,
-                                ),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8),
                                 ),
@@ -1073,15 +1099,14 @@ class _HomePageState extends State<HomePage> {
                         shape: BoxShape.circle,
                       ),
                       child: StreamBuilder<DocumentSnapshot>(
-                        stream:
-                            _auth.currentUser != null
-                                ? _firestore
-                                    .collection('users')
-                                    .doc(_auth.currentUser!.uid)
-                                    .collection('saved')
-                                    .doc(product['id'])
-                                    .snapshots()
-                                : null,
+                        stream: _auth.currentUser != null
+                            ? _firestore
+                                .collection('users')
+                                .doc(_auth.currentUser!.uid)
+                                .collection('saved')
+                                .doc(product['id'])
+                                .snapshots()
+                            : null,
                         builder: (context, snapshot) {
                           final isSaved = snapshot.data?.exists ?? false;
                           return Icon(
@@ -1131,7 +1156,7 @@ class _HomePageState extends State<HomePage> {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: 3, // Placeholder - replace with actual data
+        itemCount: 3,
         itemBuilder: (context, index) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1152,7 +1177,7 @@ class _HomePageState extends State<HomePage> {
                     padding: const EdgeInsets.all(4),
                     child: CircleAvatar(
                       backgroundColor: Colors.white.withOpacity(0.1),
-                      child: Icon(Icons.person, color: Colors.white),
+                      child: const Icon(Icons.person, color: Colors.white),
                     ),
                   ),
                 ),
@@ -1188,7 +1213,7 @@ class _HomePageState extends State<HomePage> {
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8),
-        itemCount: 3, // Placeholder - replace with actual data
+        itemCount: 3,
         itemBuilder: (context, index) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1210,7 +1235,7 @@ class _HomePageState extends State<HomePage> {
                         width: double.infinity,
                         child: Container(
                           color: Colors.white.withOpacity(0.1),
-                          child: Center(
+                          child: const Center(
                             child: Icon(
                               Icons.store,
                               color: Colors.white,
@@ -1369,7 +1394,6 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    _carouselController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -1483,8 +1507,7 @@ class _BottomNavBarState extends State<BottomNavBar> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          color:
-              isSelected ? Colors.orange.withOpacity(0.1) : Colors.transparent,
+          color: isSelected ? Colors.orange.withOpacity(0.1) : Colors.transparent,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
