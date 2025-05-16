@@ -48,6 +48,13 @@ class _HomePageState extends State<HomePage> {
   int _currentIndex = 0;
   bool _isSearching = false;
   List<Map<String, dynamic>> _searchResults = [];
+  bool _isInitialLoadComplete = false;
+
+  // Cache variables
+  static List<String>? _cachedCarouselImages;
+  static List<Map<String, dynamic>>? _cachedCategories;
+  static List<Map<String, dynamic>>? _cachedProducts;
+  static List<Map<String, dynamic>>? _cachedSponsoredProducts;
 
   final List<Widget> _screens = [
     const _HomeContent(),
@@ -63,6 +70,11 @@ class _HomePageState extends State<HomePage> {
     _setupScrollListener();
     _setupAuthListener();
     _searchController.addListener(_onSearchChanged);
+
+    // Prefetch data when idle
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _prefetchAdditionalData();
+    });
   }
 
   @override
@@ -70,6 +82,20 @@ class _HomePageState extends State<HomePage> {
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _prefetchAdditionalData() async {
+    // Prefetch data that's not immediately needed
+    await Future.wait([
+      _firestore.collection('carouselImages').orderBy('order').get(),
+      _firestore.collection('categories').limit(6).get(),
+      _firestore
+          .collection('products')
+          .where('approved', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .limit(10)
+          .get(),
+    ]);
   }
 
   void _setupAuthListener() {
@@ -83,21 +109,51 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initializeData() async {
-    // First try to load from cache
-    await _fetchInitialDataFromCache();
+    if (!_isInitialLoadComplete) {
+      // First try to load from cache
+      await _fetchInitialDataFromCache();
+    }
 
     // Then fetch fresh data
     await _fetchInitialDataFromServer();
+
+    if (!_isInitialLoadComplete) {
+      setState(() => _isInitialLoadComplete = true);
+    }
   }
 
   Future<void> _fetchInitialDataFromCache() async {
     try {
-      await Future.wait([
-        _fetchCarouselImages(Source.cache),
-        _fetchCategories(Source.cache),
-        _fetchInitialProducts(Source.cache),
-        if (_auth.currentUser != null) _fetchCartCount(Source.cache),
-      ]);
+      // Use cached data if available
+      if (_cachedCarouselImages != null) {
+        setState(() {
+          _carouselImages = _cachedCarouselImages!;
+          _isLoadingCarousel = false;
+        });
+      } else {
+        await _fetchCarouselImages(Source.cache);
+      }
+
+      if (_cachedCategories != null) {
+        setState(() {
+          _categories = _cachedCategories!;
+          _isLoadingCategories = false;
+        });
+      } else {
+        await _fetchCategories(Source.cache);
+      }
+
+      if (_cachedProducts != null && _cachedSponsoredProducts != null) {
+        setState(() {
+          _products = _cachedProducts!;
+          _sponsoredProducts = _cachedSponsoredProducts!;
+          _isLoadingProducts = false;
+        });
+      } else {
+        await _fetchInitialProducts(Source.cache);
+      }
+
+      if (_auth.currentUser != null) _fetchCartCount(Source.cache);
     } catch (e) {
       debugPrint('Error loading from cache: $e');
     }
@@ -107,10 +163,13 @@ class _HomePageState extends State<HomePage> {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
       if (connectivityResult == ConnectivityResult.none) {
-        _showErrorToast('No internet connection');
+        if (!_isInitialLoadComplete) {
+          _showErrorToast('No internet connection');
+        }
         return;
       }
 
+      // Fetch all data in parallel
       await Future.wait([
         _fetchCarouselImages(Source.server),
         _fetchCategories(Source.server),
@@ -120,7 +179,9 @@ class _HomePageState extends State<HomePage> {
       ]);
     } catch (e) {
       debugPrint('Error loading from server: $e');
-      _showErrorToast('Failed to load data. Please try again.');
+      if (!_isInitialLoadComplete) {
+        _showErrorToast('Failed to load data. Please try again.');
+      }
     }
   }
 
@@ -138,7 +199,10 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchInitialProducts([Source source = Source.server]) async {
     if (!mounted) return;
-    setState(() => _isLoadingProducts = true);
+
+    if (source == Source.server) {
+      setState(() => _isLoadingProducts = true);
+    }
 
     try {
       final query = _firestore
@@ -169,6 +233,12 @@ class _HomePageState extends State<HomePage> {
           _sponsoredProducts = products.where((p) => p['sponsored']).toList();
           _isLoadingProducts = false;
         });
+
+        // Cache the products
+        if (source == Source.server) {
+          _cachedProducts = _products;
+          _cachedSponsoredProducts = _sponsoredProducts;
+        }
       }
     } catch (e, stackTrace) {
       debugPrint('Error fetching products: $e\n$stackTrace');
@@ -259,7 +329,10 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchCategories([Source source = Source.server]) async {
     if (!mounted) return;
-    setState(() => _isLoadingCategories = true);
+
+    if (source == Source.server) {
+      setState(() => _isLoadingCategories = true);
+    }
 
     try {
       final snapshot = await _firestore
@@ -283,6 +356,11 @@ class _HomePageState extends State<HomePage> {
           _categories = categories;
           _isLoadingCategories = false;
         });
+
+        // Cache the categories
+        if (source == Source.server) {
+          _cachedCategories = categories;
+        }
       }
     } catch (e) {
       debugPrint('Error fetching categories: $e');
@@ -297,7 +375,10 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchCarouselImages([Source source = Source.server]) async {
     if (!mounted) return;
-    setState(() => _isLoadingCarousel = true);
+
+    if (source == Source.server) {
+      setState(() => _isLoadingCarousel = true);
+    }
 
     try {
       final snapshot = await _firestore
@@ -316,6 +397,11 @@ class _HomePageState extends State<HomePage> {
           _carouselImages = images;
           _isLoadingCarousel = false;
         });
+
+        // Cache the carousel images
+        if (source == Source.server) {
+          _cachedCarouselImages = images;
+        }
       }
     } catch (e) {
       debugPrint('Error fetching carousel images: $e');
@@ -473,27 +559,25 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // Search products
-      final productsQuery =
-          await _firestore
-              .collection('products')
-              .where('approved', isEqualTo: true)
-              .where('name', isGreaterThanOrEqualTo: query)
-              .where('name', isLessThanOrEqualTo: '$query\uf8ff')
-              .limit(10)
-              .get();
+      // Search products and categories in parallel
+      final results = await Future.wait([
+        _firestore
+            .collection('products')
+            .where('approved', isEqualTo: true)
+            .where('name', isGreaterThanOrEqualTo: query)
+            .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+            .limit(10)
+            .get(),
+        _firestore
+            .collection('categories')
+            .where('name', isGreaterThanOrEqualTo: query)
+            .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+            .limit(10)
+            .get(),
+      ]);
 
-      // Search categories
-      final categoriesQuery =
-          await _firestore
-              .collection('categories')
-              .where('name', isGreaterThanOrEqualTo: query)
-              .where('name', isLessThanOrEqualTo: '$query\uf8ff')
-              .limit(10)
-              .get();
-
-      final results = [
-        ...productsQuery.docs.map((doc) {
+      final combinedResults = [
+        ...results[0].docs.map((doc) {
           final data = doc.data();
           return {
             'id': doc.id,
@@ -506,7 +590,7 @@ class _HomePageState extends State<HomePage> {
                     : '',
           };
         }),
-        ...categoriesQuery.docs.map((doc) {
+        ...results[1].docs.map((doc) {
           final data = doc.data();
           return {
             'id': doc.id,
@@ -518,7 +602,7 @@ class _HomePageState extends State<HomePage> {
       ];
 
       setState(() {
-        _searchResults = results;
+        _searchResults = combinedResults;
       });
     } catch (e) {
       debugPrint('Error searching: $e');
@@ -628,7 +712,7 @@ class _HomePageState extends State<HomePage> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: SizedBox(
-          height: 220, // Increased height
+          height: 220,
           child: Shimmer.fromColors(
             baseColor: Colors.grey[800]!,
             highlightColor: Colors.grey[700]!,
@@ -646,7 +730,7 @@ class _HomePageState extends State<HomePage> {
 
     if (_carouselImages.isEmpty) {
       return Container(
-        height: 220, // Increased height
+        height: 220,
         margin: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
@@ -668,7 +752,7 @@ class _HomePageState extends State<HomePage> {
           CarouselSlider.builder(
             itemCount: _carouselImages.length,
             options: CarouselOptions(
-              height: 220, // Increased height
+              height: 220,
               autoPlay: true,
               viewportFraction: 0.9,
               enlargeCenterPage: true,
@@ -949,7 +1033,7 @@ class _HomePageState extends State<HomePage> {
     if (_isLoadingProducts) {
       return SliverToBoxAdapter(
         child: SizedBox(
-          height: 240, // Increased height for better card proportions
+          height: 240,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -958,7 +1042,7 @@ class _HomePageState extends State<HomePage> {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SizedBox(
-                  width: 170, // Slightly wider for better proportions
+                  width: 170,
                   child: Shimmer.fromColors(
                     baseColor: Colors.grey[800]!,
                     highlightColor: Colors.grey[700]!,
@@ -1008,7 +1092,7 @@ class _HomePageState extends State<HomePage> {
 
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 240, // Increased height for better card proportions
+        height: 240,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1025,7 +1109,7 @@ class _HomePageState extends State<HomePage> {
     if (_isLoadingProducts) {
       return SliverToBoxAdapter(
         child: SizedBox(
-          height: 240, // Increased height for better card proportions
+          height: 240,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1034,7 +1118,7 @@ class _HomePageState extends State<HomePage> {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SizedBox(
-                  width: 170, // Slightly wider for better proportions
+                  width: 170,
                   child: Shimmer.fromColors(
                     baseColor: Colors.grey[800]!,
                     highlightColor: Colors.grey[700]!,
@@ -1059,7 +1143,7 @@ class _HomePageState extends State<HomePage> {
 
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 240, // Increased height for better card proportions
+        height: 240,
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -1076,7 +1160,7 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
-        width: 170, // Slightly wider for better proportions
+        width: 170,
         child: Card(
           color: const Color(0xFF1A3A6A),
           shape: RoundedRectangleBorder(
@@ -1102,8 +1186,7 @@ class _HomePageState extends State<HomePage> {
                         top: Radius.circular(12),
                       ),
                       child: SizedBox(
-                        height:
-                            140, // Increased height for better image display
+                        height: 140,
                         width: double.infinity,
                         child: CachedNetworkImage(
                           imageUrl: product['image'],
