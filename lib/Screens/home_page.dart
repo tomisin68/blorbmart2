@@ -58,6 +58,17 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _initializeData();
     _setupScrollListener();
+    _setupAuthListener();
+  }
+
+  void _setupAuthListener() {
+    _auth.authStateChanges().listen((user) {
+      if (user != null) {
+        _fetchCartCount();
+      } else {
+        setState(() => _cartCount = 0);
+      }
+    });
   }
 
   Future<void> _initializeData() async {
@@ -74,7 +85,7 @@ class _HomePageState extends State<HomePage> {
         _fetchCarouselImages(Source.cache),
         _fetchCategories(Source.cache),
         _fetchInitialProducts(Source.cache),
-        _fetchCartCount(Source.cache),
+        if (_auth.currentUser != null) _fetchCartCount(Source.cache),
       ]);
     } catch (e) {
       debugPrint('Error loading from cache: $e');
@@ -83,15 +94,22 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchInitialDataFromServer() async {
     try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult == ConnectivityResult.none) {
+        _showErrorToast('No internet connection');
+        return;
+      }
+
       await Future.wait([
         _fetchCarouselImages(Source.server),
         _fetchCategories(Source.server),
         _fetchInitialProducts(Source.server),
-        _fetchCartCount(Source.server),
+        if (_auth.currentUser != null) _fetchCartCount(Source.server),
         _getCurrentLocation(),
       ]);
     } catch (e) {
       debugPrint('Error loading from server: $e');
+      _showErrorToast('Failed to load data. Please try again.');
     }
   }
 
@@ -111,16 +129,6 @@ class _HomePageState extends State<HomePage> {
     setState(() => _isLoadingProducts = true);
 
     try {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult == ConnectivityResult.none &&
-          source == Source.server) {
-        if (mounted) {
-          _showErrorToast('No internet connection');
-          setState(() => _isLoadingProducts = false);
-        }
-        return;
-      }
-
       final query = _firestore
           .collection('products')
           .where('approved', isEqualTo: true)
@@ -162,8 +170,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _fetchMoreProducts() async {
-    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null)
+    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null) {
       return;
+    }
 
     if (!mounted) return;
     setState(() => _isFetchingMore = true);
@@ -208,24 +217,32 @@ class _HomePageState extends State<HomePage> {
   Future<List<Map<String, dynamic>>> _parseProductDocuments(
     List<DocumentSnapshot> docs,
   ) async {
-    return docs.map((doc) {
-      final data = doc.data() as Map<String, dynamic>;
-      return {
-        'id': doc.id,
-        'name': data['name'] ?? 'No Name',
-        'price': (data['price'] as num?)?.toDouble() ?? 0.0,
-        'image':
-            data['imageUrls'] is List && data['imageUrls'].isNotEmpty
-                ? data['imageUrls'][0]
-                : '',
-        'stock': data['stock'] ?? 0,
-        'sponsored': data['sponsored'] ?? false,
-        'description': data['description'] ?? '',
-        'category': data['category'] ?? '',
-        'sellerId': data['sellerId'] ?? '',
-        'timestamp': data['createdAt'] ?? Timestamp.now(),
-      };
-    }).toList();
+    final List<Map<String, dynamic>> products = [];
+
+    for (final doc in docs) {
+      try {
+        final data = doc.data() as Map<String, dynamic>? ?? {};
+        products.add({
+          'id': doc.id,
+          'name': data['name'] ?? 'No Name',
+          'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+          'image':
+              (data['imageUrls'] is List && data['imageUrls'].isNotEmpty)
+                  ? data['imageUrls'][0]
+                  : '',
+          'stock': data['stock'] ?? 0,
+          'sponsored': data['sponsored'] ?? false,
+          'description': data['description'] ?? '',
+          'category': data['category'] ?? '',
+          'sellerId': data['sellerId'] ?? '',
+          'timestamp': data['createdAt'] ?? Timestamp.now(),
+        });
+      } catch (e) {
+        debugPrint('Error parsing product ${doc.id}: $e');
+      }
+    }
+
+    return products;
   }
 
   Future<void> _fetchCategories([Source source = Source.server]) async {
@@ -273,6 +290,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final snapshot = await _firestore
           .collection('carouselImages')
+          .orderBy('order')
           .get(GetOptions(source: source));
 
       final images =
@@ -516,7 +534,20 @@ class _HomePageState extends State<HomePage> {
     }
 
     if (_carouselImages.isEmpty) {
-      return const SizedBox.shrink();
+      return Container(
+        height: 180,
+        margin: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Center(
+          child: Text(
+            'No carousel images available',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
+        ),
+      );
     }
 
     return Padding(
@@ -613,6 +644,19 @@ class _HomePageState extends State<HomePage> {
               ),
             );
           },
+        ),
+      );
+    }
+
+    if (_categories.isEmpty) {
+      return Container(
+        height: 100,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Center(
+          child: Text(
+            'No categories found',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
         ),
       );
     }
