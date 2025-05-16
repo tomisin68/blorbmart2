@@ -29,6 +29,7 @@ class _HomePageState extends State<HomePage> {
   final Location _location = Location();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey();
+  final TextEditingController _searchController = TextEditingController();
 
   List<String> _carouselImages = [];
   bool _isLoadingCarousel = true;
@@ -45,6 +46,8 @@ class _HomePageState extends State<HomePage> {
   DocumentSnapshot? _lastProductDocument;
   bool _isFetchingMore = false;
   int _currentIndex = 0;
+  bool _isSearching = false;
+  List<Map<String, dynamic>> _searchResults = [];
 
   final List<Widget> _screens = [
     const _HomeContent(),
@@ -59,6 +62,14 @@ class _HomePageState extends State<HomePage> {
     _initializeData();
     _setupScrollListener();
     _setupAuthListener();
+    _searchController.addListener(_onSearchChanged);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   void _setupAuthListener() {
@@ -118,7 +129,8 @@ class _HomePageState extends State<HomePage> {
       if (_scrollController.position.pixels >=
               _scrollController.position.maxScrollExtent - 200 &&
           !_isFetchingMore &&
-          _hasMoreProducts) {
+          _hasMoreProducts &&
+          !_isSearching) {
         _fetchMoreProducts();
       }
     });
@@ -446,6 +458,104 @@ class _HomePageState extends State<HomePage> {
     return '${remaining.inHours}:${(remaining.inMinutes % 60).toString().padLeft(2, '0')}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}';
   }
 
+  Future<void> _onSearchChanged() async {
+    final query = _searchController.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _isSearching = false;
+        _searchResults.clear();
+      });
+      return;
+    }
+
+    setState(() {
+      _isSearching = true;
+    });
+
+    try {
+      // Search products
+      final productsQuery =
+          await _firestore
+              .collection('products')
+              .where('approved', isEqualTo: true)
+              .where('name', isGreaterThanOrEqualTo: query)
+              .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+              .limit(10)
+              .get();
+
+      // Search categories
+      final categoriesQuery =
+          await _firestore
+              .collection('categories')
+              .where('name', isGreaterThanOrEqualTo: query)
+              .where('name', isLessThanOrEqualTo: '$query\uf8ff')
+              .limit(10)
+              .get();
+
+      final results = [
+        ...productsQuery.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'id': doc.id,
+            'name': data['name'] ?? 'No Name',
+            'type': 'product',
+            'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+            'image':
+                (data['imageUrls'] is List && data['imageUrls'].isNotEmpty)
+                    ? data['imageUrls'][0]
+                    : '',
+          };
+        }),
+        ...categoriesQuery.docs.map((doc) {
+          final data = doc.data();
+          return {
+            'id': doc.id,
+            'name': data['name'] ?? 'No Name',
+            'type': 'category',
+            'imageUrl': data['imageUrl'] ?? '',
+          };
+        }),
+      ];
+
+      setState(() {
+        _searchResults = results;
+      });
+    } catch (e) {
+      debugPrint('Error searching: $e');
+      _showErrorToast('Failed to perform search');
+    }
+  }
+
+  void _navigateToSearchResult(Map<String, dynamic> result) {
+    if (result['type'] == 'product') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (context) => ProductDetailsPage(
+                product: {
+                  'id': result['id'],
+                  'name': result['name'],
+                  'price': result['price'],
+                  'image': result['image'],
+                },
+              ),
+        ),
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (context) => ProductFeed(
+                categoryId: result['id'],
+                categoryName: result['name'],
+              ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -484,6 +594,7 @@ class _HomePageState extends State<HomePage> {
                 style: GoogleFonts.poppins(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
+                  fontSize: 16,
                 ),
               ),
               if (subtitle != null)
@@ -517,7 +628,7 @@ class _HomePageState extends State<HomePage> {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: SizedBox(
-          height: 180,
+          height: 220, // Increased height
           child: Shimmer.fromColors(
             baseColor: Colors.grey[800]!,
             highlightColor: Colors.grey[700]!,
@@ -535,7 +646,7 @@ class _HomePageState extends State<HomePage> {
 
     if (_carouselImages.isEmpty) {
       return Container(
-        height: 180,
+        height: 220, // Increased height
         margin: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.1),
@@ -557,7 +668,7 @@ class _HomePageState extends State<HomePage> {
           CarouselSlider.builder(
             itemCount: _carouselImages.length,
             options: CarouselOptions(
-              height: 180,
+              height: 220, // Increased height
               autoPlay: true,
               viewportFraction: 0.9,
               enlargeCenterPage: true,
@@ -566,26 +677,60 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             itemBuilder: (context, index, _) {
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 5),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl: _carouselImages[index],
-                    fit: BoxFit.cover,
-                    placeholder:
-                        (_, __) =>
-                            Container(color: Colors.white.withOpacity(0.1)),
-                    errorWidget:
-                        (_, __, ___) => Container(
-                          color: Colors.white.withOpacity(0.1),
-                          child: const Icon(Icons.error, color: Colors.white),
-                        ),
+              return Stack(
+                children: [
+                  Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: CachedNetworkImage(
+                        imageUrl: _carouselImages[index],
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        placeholder:
+                            (_, __) =>
+                                Container(color: Colors.white.withOpacity(0.1)),
+                        errorWidget:
+                            (_, __, ___) => Container(
+                              color: Colors.white.withOpacity(0.1),
+                              child: const Icon(
+                                Icons.error,
+                                color: Colors.white,
+                              ),
+                            ),
+                      ),
+                    ),
                   ),
-                ),
+                  Positioned(
+                    bottom: 20,
+                    right: 20,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        // Implement buy now functionality
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: Text(
+                        'Buy Now',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               );
             },
           ),
@@ -804,7 +949,7 @@ class _HomePageState extends State<HomePage> {
     if (_isLoadingProducts) {
       return SliverToBoxAdapter(
         child: SizedBox(
-          height: 220,
+          height: 240, // Increased height for better card proportions
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -813,7 +958,7 @@ class _HomePageState extends State<HomePage> {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SizedBox(
-                  width: 160,
+                  width: 170, // Slightly wider for better proportions
                   child: Shimmer.fromColors(
                     baseColor: Colors.grey[800]!,
                     highlightColor: Colors.grey[700]!,
@@ -863,7 +1008,7 @@ class _HomePageState extends State<HomePage> {
 
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 220,
+        height: 240, // Increased height for better card proportions
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -880,7 +1025,7 @@ class _HomePageState extends State<HomePage> {
     if (_isLoadingProducts) {
       return SliverToBoxAdapter(
         child: SizedBox(
-          height: 220,
+          height: 240, // Increased height for better card proportions
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -889,7 +1034,7 @@ class _HomePageState extends State<HomePage> {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: SizedBox(
-                  width: 160,
+                  width: 170, // Slightly wider for better proportions
                   child: Shimmer.fromColors(
                     baseColor: Colors.grey[800]!,
                     highlightColor: Colors.grey[700]!,
@@ -914,7 +1059,7 @@ class _HomePageState extends State<HomePage> {
 
     return SliverToBoxAdapter(
       child: SizedBox(
-        height: 220,
+        height: 240, // Increased height for better card proportions
         child: ListView.builder(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -931,7 +1076,7 @@ class _HomePageState extends State<HomePage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: SizedBox(
-        width: 160,
+        width: 170, // Slightly wider for better proportions
         child: Card(
           color: const Color(0xFF1A3A6A),
           shape: RoundedRectangleBorder(
@@ -957,7 +1102,8 @@ class _HomePageState extends State<HomePage> {
                         top: Radius.circular(12),
                       ),
                       child: SizedBox(
-                        height: 120,
+                        height:
+                            140, // Increased height for better image display
                         width: double.infinity,
                         child: CachedNetworkImage(
                           imageUrl: product['image'],
@@ -978,7 +1124,7 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(10),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -991,15 +1137,16 @@ class _HomePageState extends State<HomePage> {
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 6),
                           Text(
                             '₦${product['price'].toStringAsFixed(2)}',
                             style: GoogleFonts.poppins(
                               fontWeight: FontWeight.bold,
                               color: Colors.orange,
+                              fontSize: 14,
                             ),
                           ),
-                          const SizedBox(height: 4),
+                          const SizedBox(height: 8),
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
@@ -1209,6 +1356,80 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildSearchResults() {
+    if (_searchResults.isEmpty) {
+      return SliverToBoxAdapter(
+        child: Container(
+          height: 200,
+          padding: const EdgeInsets.all(16),
+          child: Center(
+            child: Text(
+              'No results found',
+              style: GoogleFonts.poppins(color: Colors.white70, fontSize: 18),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverList(
+      delegate: SliverChildBuilderDelegate((context, index) {
+        final item = _searchResults[index];
+        return Card(
+          color: const Color(0xFF1A3A6A),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: ListTile(
+            leading:
+                item['type'] == 'product'
+                    ? CachedNetworkImage(
+                      imageUrl: item['image'],
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      placeholder:
+                          (_, __) =>
+                              Container(color: Colors.white.withOpacity(0.1)),
+                      errorWidget:
+                          (_, __, ___) => Container(
+                            color: Colors.white.withOpacity(0.1),
+                            child: const Icon(Icons.error, color: Colors.white),
+                          ),
+                    )
+                    : CachedNetworkImage(
+                      imageUrl: item['imageUrl'],
+                      width: 50,
+                      height: 50,
+                      fit: BoxFit.cover,
+                      placeholder:
+                          (_, __) =>
+                              Container(color: Colors.white.withOpacity(0.1)),
+                      errorWidget:
+                          (_, __, ___) => Container(
+                            color: Colors.white.withOpacity(0.1),
+                            child: const Icon(
+                              Icons.category,
+                              color: Colors.white,
+                            ),
+                          ),
+                    ),
+            title: Text(
+              item['name'],
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
+            subtitle: Text(
+              item['type'] == 'product'
+                  ? '₦${item['price'].toStringAsFixed(2)}'
+                  : 'Category',
+              style: GoogleFonts.poppins(color: Colors.white70),
+            ),
+            trailing: const Icon(Icons.chevron_right, color: Colors.white),
+            onTap: () => _navigateToSearchResult(item),
+          ),
+        );
+      }, childCount: _searchResults.length),
+    );
+  }
+
   void _showBecomeSellerDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -1239,7 +1460,7 @@ class _HomePageState extends State<HomePage> {
                   borderRadius: BorderRadius.circular(12),
                   child: CachedNetworkImage(
                     imageUrl:
-                        'https://images.unsplash.com/photo-1556740738-b6a63e27c4df',
+                        'https://res.cloudinary.com/ddmazpovi/image/upload/v1747411441/11669652_20943855_wctvmm.jpg',
                     height: 120,
                     width: double.infinity,
                     fit: BoxFit.cover,
@@ -1333,12 +1554,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
   }
-
-  @override
-  void dispose() {
-    _scrollController.dispose();
-    super.dispose();
-  }
 }
 
 class _HomeContent extends StatelessWidget {
@@ -1361,6 +1576,7 @@ class _HomeContent extends StatelessWidget {
             border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
           ),
           child: TextField(
+            controller: state._searchController,
             style: GoogleFonts.poppins(color: Colors.white),
             decoration: InputDecoration(
               hintText: 'Search on Blorbmart',
@@ -1419,75 +1635,79 @@ class _HomeContent extends StatelessWidget {
           controller: state._scrollController,
           physics: const BouncingScrollPhysics(),
           slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  state._buildSectionHeader(
-                    icon: Icons.location_on,
-                    title: 'Nearby Products & Stores',
-                    subtitle:
-                        state._currentLocation != null
-                            ? 'Lat: ${state._currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${state._currentLocation!.longitude!.toStringAsFixed(4)}'
-                            : null,
-                    onSeeAll: () {},
-                  ),
-                  state._buildImageCarousel(),
-                  state._buildSectionHeader(
-                    title: 'Categories',
-                    onSeeAll: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const CategoriesPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  state._buildCategories(),
-                  state._buildFlashSaleBanner(),
-                  state._buildSectionHeader(
-                    title: 'Trending Products',
-                    onSeeAll: () {},
-                  ),
-                ],
-              ),
-            ),
-            state._buildProductsList(),
-            SliverToBoxAdapter(
-              child: state._buildSectionHeader(
-                title: 'Sponsored',
-                onSeeAll: () {},
-              ),
-            ),
-            state._buildSponsoredProductsList(),
-            SliverToBoxAdapter(
-              child: state._buildSectionHeader(
-                title: 'Top Sellers',
-                onSeeAll: () {},
-              ),
-            ),
-            SliverToBoxAdapter(child: state._buildTopSellers()),
-            SliverToBoxAdapter(
-              child: state._buildSectionHeader(
-                title: 'Official Stores',
-                onSeeAll: () {},
-              ),
-            ),
-            SliverToBoxAdapter(child: state._buildOfficialStores()),
-            SliverToBoxAdapter(
-              child:
-                  state._isFetchingMore
-                      ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 16),
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.orange,
+            if (state._isSearching)
+              state._buildSearchResults()
+            else ...[
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    state._buildSectionHeader(
+                      icon: Icons.location_on,
+                      title: 'Nearby Products & Stores',
+                      subtitle:
+                          state._currentLocation != null
+                              ? 'Lat: ${state._currentLocation!.latitude!.toStringAsFixed(4)}, Long: ${state._currentLocation!.longitude!.toStringAsFixed(4)}'
+                              : null,
+                      onSeeAll: () {},
+                    ),
+                    state._buildImageCarousel(),
+                    state._buildSectionHeader(
+                      title: 'Categories',
+                      onSeeAll: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const CategoriesPage(),
                           ),
-                        ),
-                      )
-                      : const SizedBox(height: 80),
-            ),
+                        );
+                      },
+                    ),
+                    state._buildCategories(),
+                    state._buildFlashSaleBanner(),
+                    state._buildSectionHeader(
+                      title: 'Trending Products',
+                      onSeeAll: () {},
+                    ),
+                  ],
+                ),
+              ),
+              state._buildProductsList(),
+              SliverToBoxAdapter(
+                child: state._buildSectionHeader(
+                  title: 'Sponsored',
+                  onSeeAll: () {},
+                ),
+              ),
+              state._buildSponsoredProductsList(),
+              SliverToBoxAdapter(
+                child: state._buildSectionHeader(
+                  title: 'Top Sellers',
+                  onSeeAll: () {},
+                ),
+              ),
+              SliverToBoxAdapter(child: state._buildTopSellers()),
+              SliverToBoxAdapter(
+                child: state._buildSectionHeader(
+                  title: 'Official Stores',
+                  onSeeAll: () {},
+                ),
+              ),
+              SliverToBoxAdapter(child: state._buildOfficialStores()),
+              SliverToBoxAdapter(
+                child:
+                    state._isFetchingMore
+                        ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              color: Colors.orange,
+                            ),
+                          ),
+                        )
+                        : const SizedBox(height: 80),
+              ),
+            ],
           ],
         ),
       ),
