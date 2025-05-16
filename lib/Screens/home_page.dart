@@ -70,11 +70,6 @@ class _HomePageState extends State<HomePage> {
     _setupScrollListener();
     _setupAuthListener();
     _searchController.addListener(_onSearchChanged);
-
-    // Prefetch data when idle
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _prefetchAdditionalData();
-    });
   }
 
   @override
@@ -82,20 +77,6 @@ class _HomePageState extends State<HomePage> {
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  Future<void> _prefetchAdditionalData() async {
-    // Prefetch data that's not immediately needed
-    await Future.wait([
-      _firestore.collection('carouselImages').orderBy('order').get(),
-      _firestore.collection('categories').limit(6).get(),
-      _firestore
-          .collection('products')
-          .where('approved', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .limit(10)
-          .get(),
-    ]);
   }
 
   void _setupAuthListener() {
@@ -110,11 +91,8 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _initializeData() async {
     if (!_isInitialLoadComplete) {
-      // First try to load from cache
       await _fetchInitialDataFromCache();
     }
-
-    // Then fetch fresh data
     await _fetchInitialDataFromServer();
 
     if (!_isInitialLoadComplete) {
@@ -124,7 +102,7 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchInitialDataFromCache() async {
     try {
-      // Use cached data if available
+      // Try to load carousel images from cache
       if (_cachedCarouselImages != null) {
         setState(() {
           _carouselImages = _cachedCarouselImages!;
@@ -134,6 +112,7 @@ class _HomePageState extends State<HomePage> {
         await _fetchCarouselImages(Source.cache);
       }
 
+      // Try to load categories from cache
       if (_cachedCategories != null) {
         setState(() {
           _categories = _cachedCategories!;
@@ -143,6 +122,7 @@ class _HomePageState extends State<HomePage> {
         await _fetchCategories(Source.cache);
       }
 
+      // Try to load products from cache
       if (_cachedProducts != null && _cachedSponsoredProducts != null) {
         setState(() {
           _products = _cachedProducts!;
@@ -197,134 +177,45 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _fetchInitialProducts([Source source = Source.server]) async {
+  Future<void> _fetchCarouselImages([Source source = Source.server]) async {
     if (!mounted) return;
 
     if (source == Source.server) {
-      setState(() => _isLoadingProducts = true);
+      setState(() => _isLoadingCarousel = true);
     }
 
     try {
-      final query = _firestore
-          .collection('products')
-          .where('approved', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .limit(10);
+      final snapshot = await _firestore
+          .collection('carouselImages')
+          .orderBy('order')
+          .get(GetOptions(source: source));
 
-      final snapshot = await query.get(GetOptions(source: source));
-
-      if (snapshot.docs.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _isLoadingProducts = false;
-            _hasMoreProducts = false;
-          });
-        }
-        return;
-      }
-
-      _lastProductDocument = snapshot.docs.last;
-
-      final products = await _parseProductDocuments(snapshot.docs);
+      final images =
+          snapshot.docs
+              .map((doc) => doc['imageurl'] as String? ?? '')
+              .where((url) => url.isNotEmpty)
+              .toList();
 
       if (mounted) {
         setState(() {
-          _products = products.where((p) => !p['sponsored']).toList();
-          _sponsoredProducts = products.where((p) => p['sponsored']).toList();
-          _isLoadingProducts = false;
+          _carouselImages = images;
+          _isLoadingCarousel = false;
         });
 
-        // Cache the products
+        // Cache the carousel images
         if (source == Source.server) {
-          _cachedProducts = _products;
-          _cachedSponsoredProducts = _sponsoredProducts;
+          _cachedCarouselImages = images;
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error fetching products: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('Error fetching carousel images: $e');
       if (mounted) {
-        setState(() => _isLoadingProducts = false);
+        setState(() => _isLoadingCarousel = false);
         if (source == Source.server) {
-          _showErrorToast('Failed to load products');
+          _showErrorToast('Failed to load carousel images');
         }
       }
     }
-  }
-
-  Future<void> _fetchMoreProducts() async {
-    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null) {
-      return;
-    }
-
-    if (!mounted) return;
-    setState(() => _isFetchingMore = true);
-
-    try {
-      final query = _firestore
-          .collection('products')
-          .where('approved', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .startAfterDocument(_lastProductDocument!)
-          .limit(10);
-
-      final snapshot = await query.get();
-
-      if (snapshot.docs.isEmpty) {
-        if (mounted) {
-          setState(() => _hasMoreProducts = false);
-        }
-        return;
-      }
-
-      _lastProductDocument = snapshot.docs.last;
-
-      final newProducts = await _parseProductDocuments(snapshot.docs);
-
-      if (mounted && newProducts.isNotEmpty) {
-        setState(() {
-          _products.addAll(newProducts.where((p) => !p['sponsored']));
-          _sponsoredProducts.addAll(newProducts.where((p) => p['sponsored']));
-          _isFetchingMore = false;
-        });
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error fetching more products: $e\n$stackTrace');
-      if (mounted) {
-        setState(() => _isFetchingMore = false);
-        _showErrorToast('Failed to load more products');
-      }
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _parseProductDocuments(
-    List<DocumentSnapshot> docs,
-  ) async {
-    final List<Map<String, dynamic>> products = [];
-
-    for (final doc in docs) {
-      try {
-        final data = doc.data() as Map<String, dynamic>? ?? {};
-        products.add({
-          'id': doc.id,
-          'name': data['name'] ?? 'No Name',
-          'price': (data['price'] as num?)?.toDouble() ?? 0.0,
-          'image':
-              (data['imageUrls'] is List && data['imageUrls'].isNotEmpty)
-                  ? data['imageUrls'][0]
-                  : '',
-          'stock': data['stock'] ?? 0,
-          'sponsored': data['sponsored'] ?? false,
-          'description': data['description'] ?? '',
-          'category': data['category'] ?? '',
-          'sellerId': data['sellerId'] ?? '',
-          'timestamp': data['createdAt'] ?? Timestamp.now(),
-        });
-      } catch (e) {
-        debugPrint('Error parsing product ${doc.id}: $e');
-      }
-    }
-
-    return products;
   }
 
   Future<void> _fetchCategories([Source source = Source.server]) async {
@@ -373,43 +264,130 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _fetchCarouselImages([Source source = Source.server]) async {
+  Future<void> _fetchInitialProducts([Source source = Source.server]) async {
     if (!mounted) return;
 
     if (source == Source.server) {
-      setState(() => _isLoadingCarousel = true);
+      setState(() => _isLoadingProducts = true);
     }
 
     try {
-      final snapshot = await _firestore
-          .collection('carouselImages')
-          .orderBy('order')
-          .get(GetOptions(source: source));
+      final query = _firestore
+          .collection('products')
+          .where('approved', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .limit(10);
 
-      final images =
-          snapshot.docs
-              .map((doc) => doc.data()['imageurl'] as String? ?? '')
-              .where((url) => url.isNotEmpty)
-              .toList();
+      final snapshot = await query.get(GetOptions(source: source));
+
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _isLoadingProducts = false;
+            _hasMoreProducts = false;
+          });
+        }
+        return;
+      }
+
+      _lastProductDocument = snapshot.docs.last;
+      final products = await _parseProductDocuments(snapshot.docs);
 
       if (mounted) {
         setState(() {
-          _carouselImages = images;
-          _isLoadingCarousel = false;
+          _products = products.where((p) => !p['sponsored']).toList();
+          _sponsoredProducts = products.where((p) => p['sponsored']).toList();
+          _isLoadingProducts = false;
         });
 
-        // Cache the carousel images
+        // Cache the products
         if (source == Source.server) {
-          _cachedCarouselImages = images;
+          _cachedProducts = _products;
+          _cachedSponsoredProducts = _sponsoredProducts;
         }
       }
-    } catch (e) {
-      debugPrint('Error fetching carousel images: $e');
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching products: $e\n$stackTrace');
       if (mounted) {
-        setState(() => _isLoadingCarousel = false);
+        setState(() => _isLoadingProducts = false);
         if (source == Source.server) {
-          _showErrorToast('Failed to load carousel images');
+          _showErrorToast('Failed to load products');
         }
+      }
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _parseProductDocuments(
+    List<DocumentSnapshot> docs,
+  ) async {
+    final List<Map<String, dynamic>> products = [];
+
+    for (final doc in docs) {
+      try {
+        final data = doc.data() as Map<String, dynamic>? ?? {};
+        products.add({
+          'id': doc.id,
+          'name': data['name'] ?? 'No Name',
+          'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+          'image':
+              (data['images'] is List && data['images'].isNotEmpty)
+                  ? data['images'][0]
+                  : '',
+          'stock': data['stock'] ?? 0,
+          'sponsored': data['sponsored'] ?? false,
+          'description': data['description'] ?? '',
+          'category': data['category'] ?? '',
+          'sellerId': data['sellerId'] ?? '',
+          'timestamp': data['createdAt'] ?? Timestamp.now(),
+        });
+      } catch (e) {
+        debugPrint('Error parsing product ${doc.id}: $e');
+      }
+    }
+
+    return products;
+  }
+
+  Future<void> _fetchMoreProducts() async {
+    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null) {
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isFetchingMore = true);
+
+    try {
+      final query = _firestore
+          .collection('products')
+          .where('approved', isEqualTo: true)
+          .orderBy('createdAt', descending: true)
+          .startAfterDocument(_lastProductDocument!)
+          .limit(10);
+
+      final snapshot = await query.get();
+
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          setState(() => _hasMoreProducts = false);
+        }
+        return;
+      }
+
+      _lastProductDocument = snapshot.docs.last;
+      final newProducts = await _parseProductDocuments(snapshot.docs);
+
+      if (mounted && newProducts.isNotEmpty) {
+        setState(() {
+          _products.addAll(newProducts.where((p) => !p['sponsored']));
+          _sponsoredProducts.addAll(newProducts.where((p) => p['sponsored']));
+          _isFetchingMore = false;
+        });
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching more products: $e\n$stackTrace');
+      if (mounted) {
+        setState(() => _isFetchingMore = false);
+        _showErrorToast('Failed to load more products');
       }
     }
   }
@@ -519,32 +497,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _showErrorToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.TOP,
-      backgroundColor: Colors.redAccent,
-      textColor: Colors.white,
-    );
-  }
-
-  void _showSuccessToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_SHORT,
-      gravity: ToastGravity.TOP,
-      backgroundColor: Colors.green,
-      textColor: Colors.white,
-    );
-  }
-
-  String _formatCountdown() {
-    final remaining = _flashSaleEnd.difference(DateTime.now());
-    return '${remaining.inHours}:${(remaining.inMinutes % 60).toString().padLeft(2, '0')}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _onSearchChanged() async {
+  void _onSearchChanged() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
       setState(() {
@@ -559,7 +512,6 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // Search products and categories in parallel
       final results = await Future.wait([
         _firestore
             .collection('products')
@@ -585,8 +537,8 @@ class _HomePageState extends State<HomePage> {
             'type': 'product',
             'price': (data['price'] as num?)?.toDouble() ?? 0.0,
             'image':
-                (data['imageUrls'] is List && data['imageUrls'].isNotEmpty)
-                    ? data['imageUrls'][0]
+                (data['images'] is List && data['images'].isNotEmpty)
+                    ? data['images'][0]
                     : '',
           };
         }),
@@ -640,18 +592,152 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A1E3D),
-      body: IndexedStack(index: _currentIndex, children: _screens),
-      bottomNavigationBar: BottomNavBar(
-        currentIndex: _currentIndex,
-        onTabChange: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
+  void _showErrorToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+    );
+  }
+
+  void _showSuccessToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.green,
+      textColor: Colors.white,
+    );
+  }
+
+  String _formatCountdown() {
+    final remaining = _flashSaleEnd.difference(DateTime.now());
+    return '${remaining.inHours}:${(remaining.inMinutes % 60).toString().padLeft(2, '0')}:${(remaining.inSeconds % 60).toString().padLeft(2, '0')}';
+  }
+
+  void _showBecomeSellerDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A1E3D),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.orange, width: 2),
+            ),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Become a Seller on Blorbmart',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl:
+                        'https://res.cloudinary.com/ddmazpovi/image/upload/v1747411441/11669652_20943855_wctvmm.jpg',
+                    height: 120,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Join our community of student sellers and start making money from your unused items!',
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildBenefitItem('No listing fees'),
+                    _buildBenefitItem('Campus-wide reach'),
+                    _buildBenefitItem('Secure transactions'),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: Text(
+                        'Not Now',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        const url = 'https://blorb.vercel.app';
+                        if (await canLaunchUrl(Uri.parse(url))) {
+                          await launchUrl(Uri.parse(url));
+                        } else {
+                          throw 'Could not launch $url';
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                      child: Text(
+                        'Seller Portal',
+                        style: GoogleFonts.poppins(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBenefitItem(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          const Icon(Icons.check_circle, color: Colors.green, size: 16),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
+          ),
+        ],
       ),
     );
   }
@@ -792,9 +878,7 @@ class _HomePageState extends State<HomePage> {
                     bottom: 20,
                     right: 20,
                     child: ElevatedButton(
-                      onPressed: () {
-                        // Implement buy now functionality
-                      },
+                      onPressed: () {},
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.orange,
                         shape: RoundedRectangleBorder(
@@ -1513,127 +1597,18 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  void _showBecomeSellerDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1E3D),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.orange, width: 2),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Become a Seller on Blorbmart',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl:
-                        'https://res.cloudinary.com/ddmazpovi/image/upload/v1747411441/11669652_20943855_wctvmm.jpg',
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Join our community of student sellers and start making money from your unused items!',
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildBenefitItem('No listing fees'),
-                    _buildBenefitItem('Campus-wide reach'),
-                    _buildBenefitItem('Secure transactions'),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Not Now',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        const url = 'https://blorb.vercel.app';
-                        if (await canLaunchUrl(Uri.parse(url))) {
-                          await launchUrl(Uri.parse(url));
-                        } else {
-                          throw 'Could not launch $url';
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Seller Portal',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildBenefitItem(String text) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 16),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
-          ),
-        ],
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF0A1E3D),
+      body: IndexedStack(index: _currentIndex, children: _screens),
+      bottomNavigationBar: BottomNavBar(
+        currentIndex: _currentIndex,
+        onTabChange: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
       ),
     );
   }
