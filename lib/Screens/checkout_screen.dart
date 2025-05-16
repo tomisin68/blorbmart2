@@ -313,7 +313,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             },
                             activeColor: Colors.orange,
                           );
-                        }).toList(),
+                        }),
                       ],
                     ),
                   ),

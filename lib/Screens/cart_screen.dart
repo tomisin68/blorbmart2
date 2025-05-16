@@ -22,7 +22,7 @@ class _CartScreenState extends State<CartScreen> {
   bool _isLoading = false;
   String _selectedPaymentMethod = 'Pay on Delivery';
   List<Map<String, dynamic>> _cartItems = [];
-  double _deliveryFee = 5.99; // Fixed delivery fee
+  final double _deliveryFee = 5.99; // Fixed delivery fee
   double _discount = 0.0;
 
   @override
@@ -319,21 +319,21 @@ class _CartScreenState extends State<CartScreen> {
     final total = _calculateTotal();
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: const Color(0xFF0A1E3D),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF0A1E3D),
         elevation: 0,
         title: Text(
           'My Cart (${_cartItems.length})',
           style: GoogleFonts.poppins(
-            color: const Color(0xFF0A1E3D),
+            color: Colors.white,
             fontWeight: FontWeight.w600,
           ),
         ),
         actions: [
           if (_cartItems.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.delete_outline, color: Color(0xFF0A1E3D)),
+              icon: const Icon(Icons.delete_outline, color: Colors.white),
               onPressed: _isLoading ? null : _clearCart,
             ),
         ],
@@ -352,14 +352,14 @@ class _CartScreenState extends State<CartScreen> {
                               const Icon(
                                 Icons.shopping_cart_outlined,
                                 size: 64,
-                                color: Colors.grey,
+                                color: Colors.white54,
                               ),
                               const SizedBox(height: 16),
                               Text(
                                 'Your cart is empty',
                                 style: GoogleFonts.poppins(
                                   fontSize: 18,
-                                  color: Colors.grey,
+                                  color: Colors.white70,
                                 ),
                               ),
                               const SizedBox(height: 8),
@@ -372,7 +372,9 @@ class _CartScreenState extends State<CartScreen> {
                                 ),
                                 child: Text(
                                   'Continue Shopping',
-                                  style: GoogleFonts.poppins(),
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                  ),
                                 ),
                               ),
                             ],
@@ -398,9 +400,19 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Widget _buildCartItem(Map<String, dynamic> item) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      elevation: 1,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A3A6A),
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.2),
+            blurRadius: 6,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -409,34 +421,39 @@ class _CartScreenState extends State<CartScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Product Image
-                Container(
-                  width: 80,
-                  height: 80,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    color: Colors.grey[200],
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
-                      imageUrl: item['image'],
-                      fit: BoxFit.cover,
-                      placeholder:
-                          (context, url) => Container(
-                            color: Colors.grey[200],
-                            child: const Center(
-                              child: CircularProgressIndicator(
-                                color: Colors.orange,
+                GestureDetector(
+                  onTap: () {
+                    // Add image preview functionality if needed
+                  },
+                  child: Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                      color: const Color(0xFF0A1E3D),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: CachedNetworkImage(
+                        imageUrl: item['image'],
+                        fit: BoxFit.cover,
+                        placeholder:
+                            (context, url) => Container(
+                              color: const Color(0xFF0A1E3D),
+                              child: const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.orange,
+                                ),
                               ),
                             ),
-                          ),
-                      errorWidget:
-                          (context, url, error) => Container(
-                            color: Colors.grey[200],
-                            child: const Center(
-                              child: Icon(Icons.error, color: Colors.grey),
+                        errorWidget:
+                            (context, url, error) => Container(
+                              color: const Color(0xFF0A1E3D),
+                              child: const Center(
+                                child: Icon(Icons.error, color: Colors.white54),
+                              ),
                             ),
-                          ),
+                      ),
                     ),
                   ),
                 ),
@@ -452,6 +469,7 @@ class _CartScreenState extends State<CartScreen> {
                         style: GoogleFonts.poppins(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
+                          color: Colors.white,
                         ),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -460,7 +478,7 @@ class _CartScreenState extends State<CartScreen> {
                       Text(
                         'by ${item['sellerName']}',
                         style: GoogleFonts.poppins(
-                          color: Colors.grey[600],
+                          color: Colors.white70,
                           fontSize: 14,
                         ),
                       ),
@@ -469,7 +487,7 @@ class _CartScreenState extends State<CartScreen> {
                         Text(
                           '${item['color']} • ${item['size']}',
                           style: GoogleFonts.poppins(
-                            color: Colors.grey[600],
+                            color: Colors.white70,
                             fontSize: 14,
                           ),
                         ),
@@ -493,7 +511,7 @@ class _CartScreenState extends State<CartScreen> {
                                 '₦${item['originalPrice'].toStringAsFixed(2)}',
                                 style: GoogleFonts.poppins(
                                   fontSize: 14,
-                                  color: Colors.grey,
+                                  color: Colors.white54,
                                   decoration: TextDecoration.lineThrough,
                                 ),
                               ),
@@ -501,13 +519,17 @@ class _CartScreenState extends State<CartScreen> {
                           const Spacer(),
                           Container(
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey[300]!),
+                              border: Border.all(color: Colors.white54),
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
                               children: [
                                 IconButton(
-                                  icon: const Icon(Icons.remove, size: 18),
+                                  icon: const Icon(
+                                    Icons.remove,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
                                   onPressed:
                                       _isLoading
                                           ? null
@@ -518,10 +540,17 @@ class _CartScreenState extends State<CartScreen> {
                                 ),
                                 Text(
                                   '${item['quantity']}',
-                                  style: GoogleFonts.poppins(fontSize: 16),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.add, size: 18),
+                                  icon: const Icon(
+                                    Icons.add,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
                                   onPressed:
                                       _isLoading
                                           ? null
@@ -547,14 +576,16 @@ class _CartScreenState extends State<CartScreen> {
               children: [
                 Icon(
                   item['inStock'] ? Icons.check_circle : Icons.error,
-                  color: item['inStock'] ? Colors.green : Colors.red,
+                  color:
+                      item['inStock'] ? Colors.greenAccent : Colors.redAccent,
                   size: 16,
                 ),
                 const SizedBox(width: 4),
                 Text(
                   item['inStock'] ? 'In Stock' : 'Out of Stock',
                   style: GoogleFonts.poppins(
-                    color: item['inStock'] ? Colors.green : Colors.red,
+                    color:
+                        item['inStock'] ? Colors.greenAccent : Colors.redAccent,
                   ),
                 ),
                 const Spacer(),
@@ -562,14 +593,17 @@ class _CartScreenState extends State<CartScreen> {
                   onPressed: _isLoading ? null : () => _removeItem(item['id']),
                   child: Text(
                     'Remove',
-                    style: GoogleFonts.poppins(color: Colors.red),
+                    style: GoogleFonts.poppins(color: Colors.redAccent),
                   ),
                 ),
                 const SizedBox(width: 8),
                 TextButton(
                   onPressed:
                       _isLoading ? null : () => _saveForLater(item['id']),
-                  child: Text('Save for later', style: GoogleFonts.poppins()),
+                  child: Text(
+                    'Save for later',
+                    style: GoogleFonts.poppins(color: Colors.orange),
+                  ),
                 ),
               ],
             ),
@@ -583,14 +617,14 @@ class _CartScreenState extends State<CartScreen> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: const Color(0xFF1A3A6A),
         borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(12),
-          topRight: Radius.circular(12),
+          topLeft: Radius.circular(16),
+          topRight: Radius.circular(16),
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.2),
+            color: Colors.black.withOpacity(0.3),
             spreadRadius: 2,
             blurRadius: 8,
             offset: const Offset(0, -3),
@@ -608,11 +642,25 @@ class _CartScreenState extends State<CartScreen> {
                   Expanded(
                     child: TextField(
                       controller: _couponController,
+                      style: GoogleFonts.poppins(color: Colors.white),
                       decoration: InputDecoration(
                         hintText: 'Enter coupon code',
-                        border: const OutlineInputBorder(),
+                        hintStyle: GoogleFonts.poppins(color: Colors.white54),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Colors.white54),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Colors.white54),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          borderSide: const BorderSide(color: Colors.orange),
+                        ),
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 12,
+                          vertical: 14,
                         ),
                       ),
                     ),
@@ -622,8 +670,12 @@ class _CartScreenState extends State<CartScreen> {
                     onPressed: _isLoading ? null : _applyCoupon,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
                     ),
-                    child: Text('Apply', style: GoogleFonts.poppins()),
+                    child: Text(
+                      'Apply',
+                      style: GoogleFonts.poppins(color: Colors.white),
+                    ),
                   ),
                 ],
               ),
@@ -633,10 +685,13 @@ class _CartScreenState extends State<CartScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Subtotal', style: GoogleFonts.poppins(color: Colors.grey)),
+              Text(
+                'Subtotal',
+                style: GoogleFonts.poppins(color: Colors.white70),
+              ),
               Text(
                 '₦${subtotal.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(),
+                style: GoogleFonts.poppins(color: Colors.white),
               ),
             ],
           ),
@@ -646,11 +701,11 @@ class _CartScreenState extends State<CartScreen> {
             children: [
               Text(
                 'Delivery Fee',
-                style: GoogleFonts.poppins(color: Colors.grey),
+                style: GoogleFonts.poppins(color: Colors.white70),
               ),
               Text(
                 '₦${_deliveryFee.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(),
+                style: GoogleFonts.poppins(color: Colors.white),
               ),
             ],
           ),
@@ -662,14 +717,14 @@ class _CartScreenState extends State<CartScreen> {
                 children: [
                   Text(
                     'Discount',
-                    style: GoogleFonts.poppins(color: Colors.grey),
+                    style: GoogleFonts.poppins(color: Colors.white70),
                   ),
                   if (_couponController.text.isNotEmpty)
                     const Padding(
                       padding: EdgeInsets.only(left: 4),
                       child: Icon(
                         Icons.check_circle,
-                        color: Colors.green,
+                        color: Colors.greenAccent,
                         size: 16,
                       ),
                     ),
@@ -677,11 +732,11 @@ class _CartScreenState extends State<CartScreen> {
               ),
               Text(
                 '-₦${_discount.toStringAsFixed(2)}',
-                style: GoogleFonts.poppins(color: Colors.green),
+                style: GoogleFonts.poppins(color: Colors.greenAccent),
               ),
             ],
           ),
-          const Divider(height: 24, thickness: 1),
+          const Divider(height: 24, thickness: 1, color: Colors.white24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -690,6 +745,7 @@ class _CartScreenState extends State<CartScreen> {
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
+                  color: Colors.white,
                 ),
               ),
               Text(
@@ -706,15 +762,23 @@ class _CartScreenState extends State<CartScreen> {
 
           // Payment Method Selection
           ExpansionTile(
+            tilePadding: EdgeInsets.zero,
             title: Text(
               'Payment Method',
-              style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+              style: GoogleFonts.poppins(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             children: [
               RadioListTile<String>(
-                title: Text('Pay on Delivery', style: GoogleFonts.poppins()),
+                title: Text(
+                  'Pay on Delivery',
+                  style: GoogleFonts.poppins(color: Colors.white),
+                ),
                 value: 'Pay on Delivery',
                 groupValue: _selectedPaymentMethod,
+                activeColor: Colors.orange,
                 onChanged:
                     _isLoading
                         ? null
@@ -725,9 +789,13 @@ class _CartScreenState extends State<CartScreen> {
                         },
               ),
               RadioListTile<String>(
-                title: Text('Credit/Debit Card', style: GoogleFonts.poppins()),
+                title: Text(
+                  'Credit/Debit Card',
+                  style: GoogleFonts.poppins(color: Colors.white),
+                ),
                 value: 'Credit/Debit Card',
                 groupValue: _selectedPaymentMethod,
+                activeColor: Colors.orange,
                 onChanged:
                     _isLoading
                         ? null
@@ -738,9 +806,13 @@ class _CartScreenState extends State<CartScreen> {
                         },
               ),
               RadioListTile<String>(
-                title: Text('BlorbPay Wallet', style: GoogleFonts.poppins()),
+                title: Text(
+                  'BlorbPay Wallet',
+                  style: GoogleFonts.poppins(color: Colors.white),
+                ),
                 value: 'BlorbPay Wallet',
                 groupValue: _selectedPaymentMethod,
+                activeColor: Colors.orange,
                 onChanged:
                     _isLoading
                         ? null
@@ -768,11 +840,15 @@ class _CartScreenState extends State<CartScreen> {
                         },
                 child: Row(
                   children: [
-                    const Icon(Icons.local_offer, size: 18),
+                    const Icon(
+                      Icons.local_offer,
+                      size: 18,
+                      color: Colors.orange,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       _showCouponField ? 'Hide Coupon' : 'Add Coupon',
-                      style: GoogleFonts.poppins(),
+                      style: GoogleFonts.poppins(color: Colors.orange),
                     ),
                   ],
                 ),
@@ -784,12 +860,18 @@ class _CartScreenState extends State<CartScreen> {
                   backgroundColor: Colors.orange,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 32,
-                    vertical: 12,
+                    vertical: 14,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
                   ),
                 ),
                 child: Text(
                   'Checkout',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
+                  style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
