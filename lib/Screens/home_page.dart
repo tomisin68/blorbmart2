@@ -61,13 +61,38 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _initializeData() async {
-    await Future.wait([
-      _fetchCartCount(),
-      _getCurrentLocation(),
-      _fetchCarouselImages(),
-      _fetchCategories(),
-      _fetchInitialProducts(),
-    ]);
+    // First try to load from cache
+    await _fetchInitialDataFromCache();
+
+    // Then fetch fresh data
+    await _fetchInitialDataFromServer();
+  }
+
+  Future<void> _fetchInitialDataFromCache() async {
+    try {
+      await Future.wait([
+        _fetchCarouselImages(Source.cache),
+        _fetchCategories(Source.cache),
+        _fetchInitialProducts(Source.cache),
+        _fetchCartCount(Source.cache),
+      ]);
+    } catch (e) {
+      debugPrint('Error loading from cache: $e');
+    }
+  }
+
+  Future<void> _fetchInitialDataFromServer() async {
+    try {
+      await Future.wait([
+        _fetchCarouselImages(Source.server),
+        _fetchCategories(Source.server),
+        _fetchInitialProducts(Source.server),
+        _fetchCartCount(Source.server),
+        _getCurrentLocation(),
+      ]);
+    } catch (e) {
+      debugPrint('Error loading from server: $e');
+    }
   }
 
   void _setupScrollListener() {
@@ -81,13 +106,14 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  Future<void> _fetchInitialProducts() async {
+  Future<void> _fetchInitialProducts([Source source = Source.server]) async {
     if (!mounted) return;
     setState(() => _isLoadingProducts = true);
 
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
-      if (connectivityResult == ConnectivityResult.none) {
+      if (connectivityResult == ConnectivityResult.none &&
+          source == Source.server) {
         if (mounted) {
           _showErrorToast('No internet connection');
           setState(() => _isLoadingProducts = false);
@@ -97,10 +123,11 @@ class _HomePageState extends State<HomePage> {
 
       final query = _firestore
           .collection('products')
+          .where('approved', isEqualTo: true)
           .orderBy('createdAt', descending: true)
           .limit(10);
 
-      final snapshot = await query.get();
+      final snapshot = await query.get(GetOptions(source: source));
 
       if (snapshot.docs.isEmpty) {
         if (mounted) {
@@ -127,13 +154,16 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Error fetching products: $e\n$stackTrace');
       if (mounted) {
         setState(() => _isLoadingProducts = false);
-        _showErrorToast('Failed to load products');
+        if (source == Source.server) {
+          _showErrorToast('Failed to load products');
+        }
       }
     }
   }
 
   Future<void> _fetchMoreProducts() async {
-    if (_isFetchingMore || !_hasMoreProducts) return;
+    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null)
+      return;
 
     if (!mounted) return;
     setState(() => _isFetchingMore = true);
@@ -141,6 +171,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final query = _firestore
           .collection('products')
+          .where('approved', isEqualTo: true)
           .orderBy('createdAt', descending: true)
           .startAfterDocument(_lastProductDocument!)
           .limit(10);
@@ -184,8 +215,8 @@ class _HomePageState extends State<HomePage> {
         'name': data['name'] ?? 'No Name',
         'price': (data['price'] as num?)?.toDouble() ?? 0.0,
         'image':
-            data['images'] is List && data['images'].isNotEmpty
-                ? data['images'][0]
+            data['imageUrls'] is List && data['imageUrls'].isNotEmpty
+                ? data['imageUrls'][0]
                 : '',
         'stock': data['stock'] ?? 0,
         'sponsored': data['sponsored'] ?? false,
@@ -197,7 +228,7 @@ class _HomePageState extends State<HomePage> {
     }).toList();
   }
 
-  Future<void> _fetchCategories() async {
+  Future<void> _fetchCategories([Source source = Source.server]) async {
     if (!mounted) return;
     setState(() => _isLoadingCategories = true);
 
@@ -205,7 +236,7 @@ class _HomePageState extends State<HomePage> {
       final snapshot = await _firestore
           .collection('categories')
           .limit(6)
-          .get(const GetOptions(source: Source.cache));
+          .get(GetOptions(source: source));
 
       final categories =
           snapshot.docs.map((doc) {
@@ -228,19 +259,21 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Error fetching categories: $e');
       if (mounted) {
         setState(() => _isLoadingCategories = false);
-        _showErrorToast('Failed to load categories');
+        if (source == Source.server) {
+          _showErrorToast('Failed to load categories');
+        }
       }
     }
   }
 
-  Future<void> _fetchCarouselImages() async {
+  Future<void> _fetchCarouselImages([Source source = Source.server]) async {
     if (!mounted) return;
     setState(() => _isLoadingCarousel = true);
 
     try {
       final snapshot = await _firestore
           .collection('carouselImages')
-          .get(const GetOptions(source: Source.cache));
+          .get(GetOptions(source: source));
 
       final images =
           snapshot.docs
@@ -258,7 +291,9 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Error fetching carousel images: $e');
       if (mounted) {
         setState(() => _isLoadingCarousel = false);
-        _showErrorToast('Failed to load carousel images');
+        if (source == Source.server) {
+          _showErrorToast('Failed to load carousel images');
+        }
       }
     }
   }
@@ -286,7 +321,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _fetchCartCount() async {
+  Future<void> _fetchCartCount([Source source = Source.server]) async {
     if (_auth.currentUser == null) return;
 
     try {
@@ -294,7 +329,7 @@ class _HomePageState extends State<HomePage> {
           .collection('users')
           .doc(_auth.currentUser!.uid)
           .collection('cart')
-          .get(const GetOptions(source: Source.cache));
+          .get(GetOptions(source: source));
 
       if (mounted) {
         setState(() => _cartCount = doc.size);
