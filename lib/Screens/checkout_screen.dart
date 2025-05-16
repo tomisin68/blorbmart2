@@ -35,7 +35,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   bool _isLoading = false;
   bool _saveAddress = true;
-  String _selectedDeliveryOption = 'Standard Delivery';
+  String _selectedDeliveryOption = 'Standard Delivery (3-5 days)';
   final List<String> _deliveryOptions = [
     'Standard Delivery (3-5 days)',
     'Express Delivery (1-2 days)',
@@ -183,32 +183,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final total = widget.subtotal + widget.deliveryFee - widget.discount;
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: const Color(0xFF0A1E3D),
       appBar: AppBar(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color(0xFF0A1E3D),
         elevation: 0,
         title: Text(
           'Checkout',
           style: GoogleFonts.poppins(
-            color: const Color(0xFF0A1E3D),
+            color: Colors.white,
             fontWeight: FontWeight.w600,
           ),
         ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFF0A1E3D)),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
       ),
       body: Stack(
         children: [
           SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Delivery Address Section
-                Card(
-                  elevation: 1,
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A6A),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -223,6 +234,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
+                                color: Colors.white,
                               ),
                             ),
                           ],
@@ -230,11 +242,33 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         const SizedBox(height: 12),
                         TextField(
                           controller: _addressController,
+                          style: GoogleFonts.poppins(color: Colors.white),
                           decoration: InputDecoration(
                             hintText: 'Enter your full address',
-                            border: const OutlineInputBorder(),
+                            hintStyle: GoogleFonts.poppins(
+                              color: Colors.white54,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.orange,
+                              ),
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 12,
+                              vertical: 14,
                             ),
                           ),
                           maxLines: 3,
@@ -242,13 +276,38 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         const SizedBox(height: 12),
                         TextField(
                           controller: _phoneController,
+                          style: GoogleFonts.poppins(color: Colors.white),
                           decoration: InputDecoration(
                             hintText: 'Phone number',
-                            border: const OutlineInputBorder(),
+                            hintStyle: GoogleFonts.poppins(
+                              color: Colors.white54,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.orange,
+                              ),
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 12,
+                              vertical: 14,
                             ),
-                            prefixIcon: const Icon(Icons.phone),
+                            prefixIcon: const Icon(
+                              Icons.phone,
+                              color: Colors.white54,
+                            ),
                           ),
                           keyboardType: TextInputType.phone,
                         ),
@@ -263,10 +322,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                 });
                               },
                               activeColor: Colors.orange,
+                              checkColor: Colors.white,
                             ),
                             Text(
                               'Save this address for future orders',
-                              style: GoogleFonts.poppins(),
+                              style: GoogleFonts.poppins(color: Colors.white70),
                             ),
                           ],
                         ),
@@ -277,8 +337,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 16),
 
                 // Delivery Options
-                Card(
-                  elevation: 1,
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A6A),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -296,6 +366,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
+                                color: Colors.white,
                               ),
                             ),
                           ],
@@ -303,7 +374,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                         const SizedBox(height: 12),
                         ..._deliveryOptions.map((option) {
                           return RadioListTile<String>(
-                            title: Text(option, style: GoogleFonts.poppins()),
+                            title: Text(
+                              option,
+                              style: GoogleFonts.poppins(color: Colors.white),
+                            ),
                             value: option,
                             groupValue: _selectedDeliveryOption,
                             onChanged: (value) {
@@ -312,6 +386,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               });
                             },
                             activeColor: Colors.orange,
+                            tileColor: Colors.transparent,
                           );
                         }),
                       ],
@@ -321,8 +396,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 16),
 
                 // Payment Method
-                Card(
-                  elevation: 1,
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A6A),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -337,6 +422,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
+                                color: Colors.white,
                               ),
                             ),
                           ],
@@ -351,6 +437,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             widget.paymentMethod,
                             style: GoogleFonts.poppins(
                               fontWeight: FontWeight.w500,
+                              color: Colors.white,
                             ),
                           ),
                           trailing: TextButton(
@@ -368,8 +455,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 16),
 
                 // Order Summary
-                Card(
-                  elevation: 1,
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A6A),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -380,6 +477,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -398,7 +496,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     height: 60,
                                     decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(8),
-                                      color: Colors.grey[200],
+                                      color: const Color(0xFF0A1E3D),
                                     ),
                                     child: ClipRRect(
                                       borderRadius: BorderRadius.circular(8),
@@ -407,11 +505,19 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         fit: BoxFit.cover,
                                         placeholder:
                                             (context, url) => Container(
-                                              color: Colors.grey[200],
+                                              color: const Color(0xFF0A1E3D),
+                                              child: const Center(
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      color: Colors.orange,
+                                                    ),
+                                              ),
                                             ),
                                         errorWidget:
-                                            (context, url, error) =>
-                                                const Icon(Icons.error),
+                                            (context, url, error) => const Icon(
+                                              Icons.error,
+                                              color: Colors.white54,
+                                            ),
                                       ),
                                     ),
                                   ),
@@ -423,7 +529,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                       children: [
                                         Text(
                                           item['name'],
-                                          style: GoogleFonts.poppins(),
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.white,
+                                          ),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
@@ -431,7 +539,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                         Text(
                                           '${item['quantity']} x ₦${item['price'].toStringAsFixed(2)}',
                                           style: GoogleFonts.poppins(
-                                            color: Colors.grey[600],
+                                            color: Colors.white70,
                                           ),
                                         ),
                                       ],
@@ -441,6 +549,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                     '₦${(item['price'] * item['quantity']).toStringAsFixed(2)}',
                                     style: GoogleFonts.poppins(
                                       fontWeight: FontWeight.bold,
+                                      color: Colors.orange,
                                     ),
                                   ),
                                 ],
@@ -448,7 +557,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                             );
                           },
                         ),
-                        const Divider(height: 24, thickness: 1),
+                        const Divider(
+                          height: 24,
+                          thickness: 1,
+                          color: Colors.white24,
+                        ),
                         _buildSummaryRow('Subtotal', widget.subtotal),
                         _buildSummaryRow('Delivery Fee', widget.deliveryFee),
                         _buildSummaryRow(
@@ -456,7 +569,11 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           -widget.discount,
                           isDiscount: true,
                         ),
-                        const Divider(height: 24, thickness: 1),
+                        const Divider(
+                          height: 24,
+                          thickness: 1,
+                          color: Colors.white24,
+                        ),
                         _buildSummaryRow('Total', total, isTotal: true),
                       ],
                     ),
@@ -465,8 +582,18 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 const SizedBox(height: 16),
 
                 // Additional Notes
-                Card(
-                  elevation: 1,
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A3A6A),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
                     child: Column(
@@ -477,16 +604,39 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,
+                            color: Colors.white,
                           ),
                         ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: _notesController,
+                          style: GoogleFonts.poppins(color: Colors.white),
                           decoration: InputDecoration(
                             hintText: 'Any special instructions?',
-                            border: const OutlineInputBorder(),
+                            hintStyle: GoogleFonts.poppins(
+                              color: Colors.white54,
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.white54,
+                              ),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              borderSide: const BorderSide(
+                                color: Colors.orange,
+                              ),
+                            ),
                             contentPadding: const EdgeInsets.symmetric(
                               horizontal: 12,
+                              vertical: 14,
                             ),
                           ),
                           maxLines: 3,
@@ -505,7 +655,15 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             alignment: Alignment.bottomCenter,
             child: Container(
               padding: const EdgeInsets.all(16),
-              color: Colors.white,
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A1E3D),
+                border: Border(
+                  top: BorderSide(
+                    color: Colors.orange.withOpacity(0.3),
+                    width: 1,
+                  ),
+                ),
+              ),
               child: SafeArea(
                 child: SizedBox(
                   width: double.infinity,
@@ -515,7 +673,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       backgroundColor: Colors.orange,
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     child:
@@ -528,6 +686,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                               style: GoogleFonts.poppins(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 16,
+                                color: Colors.white,
                               ),
                             ),
                   ),
@@ -554,7 +713,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Text(
             label,
             style: GoogleFonts.poppins(
-              color: isTotal ? const Color(0xFF0A1E3D) : Colors.grey,
+              color: isTotal ? Colors.white : Colors.white70,
               fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
             ),
           ),
@@ -565,8 +724,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                   isTotal
                       ? Colors.orange
                       : isDiscount
-                      ? Colors.green
-                      : const Color(0xFF0A1E3D),
+                      ? Colors.greenAccent
+                      : Colors.white,
               fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
             ),
           ),
