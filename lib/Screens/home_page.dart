@@ -28,8 +28,16 @@ class _HomePageState extends State<HomePage> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final Location _location = Location();
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey();
   final TextEditingController _searchController = TextEditingController();
+
+  // Define the screens for the IndexedStack
+  late final List<Widget> _screens = [
+    const _HomeContent(),
+    const SavedPage(),
+    // You can use _HomeContent or another search page for the Search tab
+    const _HomeContent(),
+    const ProfilePage(),
+  ];
 
   List<String> _carouselImages = [];
   bool _isLoadingCarousel = true;
@@ -50,18 +58,16 @@ class _HomePageState extends State<HomePage> {
   List<Map<String, dynamic>> _searchResults = [];
   bool _isInitialLoadComplete = false;
 
-  // Cache variables
+  // Memory cache
   static List<String>? _cachedCarouselImages;
   static List<Map<String, dynamic>>? _cachedCategories;
   static List<Map<String, dynamic>>? _cachedProducts;
   static List<Map<String, dynamic>>? _cachedSponsoredProducts;
+  static int? _cachedCartCount;
 
-  final List<Widget> _screens = [
-    const _HomeContent(),
-    const SavedPage(),
-    const ProductFeed(categoryId: null, categoryName: null),
-    const ProfilePage(),
-  ];
+  // Pre-cache controllers
+  final _carouselController = CarouselSliderController();
+  final _pageController = PageController();
 
   @override
   void initState() {
@@ -70,12 +76,26 @@ class _HomePageState extends State<HomePage> {
     _setupScrollListener();
     _setupAuthListener();
     _searchController.addListener(_onSearchChanged);
+
+    // Pre-cache images for better performance
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _precacheImages();
+    });
+  }
+
+  Future<void> _precacheImages() async {
+    if (_cachedCarouselImages != null) {
+      for (final url in _cachedCarouselImages!) {
+        precacheImage(CachedNetworkImageProvider(url), context);
+      }
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     _scrollController.dispose();
+    _pageController.dispose();
     super.dispose();
   }
 
@@ -102,40 +122,46 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _fetchInitialDataFromCache() async {
     try {
-      // Try to load carousel images from cache
-      if (_cachedCarouselImages != null) {
-        setState(() {
-          _carouselImages = _cachedCarouselImages!;
-          _isLoadingCarousel = false;
-        });
-      } else {
-        await _fetchCarouselImages(Source.cache);
-      }
-
-      // Try to load categories from cache
-      if (_cachedCategories != null) {
-        setState(() {
-          _categories = _cachedCategories!;
-          _isLoadingCategories = false;
-        });
-      } else {
-        await _fetchCategories(Source.cache);
-      }
-
-      // Try to load products from cache
-      if (_cachedProducts != null && _cachedSponsoredProducts != null) {
-        setState(() {
-          _products = _cachedProducts!;
-          _sponsoredProducts = _cachedSponsoredProducts!;
-          _isLoadingProducts = false;
-        });
-      } else {
-        await _fetchInitialProducts(Source.cache);
-      }
-
-      if (_auth.currentUser != null) _fetchCartCount(Source.cache);
+      // Load from cache in parallel
+      await Future.wait(
+        [
+              if (_cachedCarouselImages != null)
+                {
+                  setState(() {
+                    _carouselImages = _cachedCarouselImages!;
+                    _isLoadingCarousel = false;
+                  }),
+                }
+              else
+                {_fetchCarouselImages(Source.cache)},
+              if (_cachedCategories != null)
+                {
+                  setState(() {
+                    _categories = _cachedCategories!;
+                    _isLoadingCategories = false;
+                  }),
+                }
+              else
+                {_fetchCategories(Source.cache)},
+              if (_cachedProducts != null && _cachedSponsoredProducts != null)
+                {
+                  setState(() {
+                    _products = _cachedProducts!;
+                    _sponsoredProducts = _cachedSponsoredProducts!;
+                    _isLoadingProducts = false;
+                  }),
+                }
+              else
+                {_fetchInitialProducts(Source.cache)},
+              if (_auth.currentUser != null && _cachedCartCount != null)
+                {setState(() => _cartCount = _cachedCartCount!)}
+              else if (_auth.currentUser != null)
+                {_fetchCartCount(Source.cache)},
+            ]
+            as Iterable<Future>,
+      );
     } catch (e) {
-      debugPrint('Error loading from cache: $e');
+      debugPrint('Cache load error: $e');
     }
   }
 
@@ -143,13 +169,11 @@ class _HomePageState extends State<HomePage> {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
       if (connectivityResult == ConnectivityResult.none) {
-        if (!_isInitialLoadComplete) {
-          _showErrorToast('No internet connection');
-        }
+        if (!_isInitialLoadComplete) _showErrorToast('No internet connection');
         return;
       }
 
-      // Fetch all data in parallel
+      // Fetch all data in parallel with optimized queries
       await Future.wait([
         _fetchCarouselImages(Source.server),
         _fetchCategories(Source.server),
@@ -158,7 +182,7 @@ class _HomePageState extends State<HomePage> {
         _getCurrentLocation(),
       ]);
     } catch (e) {
-      debugPrint('Error loading from server: $e');
+      debugPrint('Server load error: $e');
       if (!_isInitialLoadComplete) {
         _showErrorToast('Failed to load data. Please try again.');
       }
@@ -202,18 +226,19 @@ class _HomePageState extends State<HomePage> {
           _isLoadingCarousel = false;
         });
 
-        // Cache the carousel images
         if (source == Source.server) {
           _cachedCarouselImages = images;
+          // Pre-cache the new images
+          for (final url in images) {
+            precacheImage(CachedNetworkImageProvider(url), context);
+          }
         }
       }
     } catch (e) {
-      debugPrint('Error fetching carousel images: $e');
+      debugPrint('Carousel error: $e');
       if (mounted) {
         setState(() => _isLoadingCarousel = false);
-        if (source == Source.server) {
-          _showErrorToast('Failed to load carousel images');
-        }
+        if (source == Source.server) _showErrorToast('Failed to load carousel');
       }
     }
   }
@@ -248,18 +273,14 @@ class _HomePageState extends State<HomePage> {
           _isLoadingCategories = false;
         });
 
-        // Cache the categories
-        if (source == Source.server) {
-          _cachedCategories = categories;
-        }
+        if (source == Source.server) _cachedCategories = categories;
       }
     } catch (e) {
-      debugPrint('Error fetching categories: $e');
+      debugPrint('Categories error: $e');
       if (mounted) {
         setState(() => _isLoadingCategories = false);
-        if (source == Source.server) {
+        if (source == Source.server)
           _showErrorToast('Failed to load categories');
-        }
       }
     }
   }
@@ -295,81 +316,82 @@ class _HomePageState extends State<HomePage> {
 
       if (mounted) {
         setState(() {
-          _products = products.where((p) => !p['sponsored']).toList();
-          _sponsoredProducts = products.where((p) => p['sponsored']).toList();
+          _products =
+              products
+                  .where((p) => !p['sponsored'])
+                  .toList()
+                  .cast<Map<String, dynamic>>();
+          _sponsoredProducts =
+              products
+                  .where((p) => p['sponsored'])
+                  .toList()
+                  .cast<Map<String, dynamic>>();
           _isLoadingProducts = false;
         });
 
-        // Cache the products
         if (source == Source.server) {
           _cachedProducts = _products;
           _cachedSponsoredProducts = _sponsoredProducts;
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error fetching products: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('Products error: $e');
       if (mounted) {
         setState(() => _isLoadingProducts = false);
-        if (source == Source.server) {
-          _showErrorToast('Failed to load products');
-        }
+        if (source == Source.server) _showErrorToast('Failed to load products');
       }
     }
   }
 
-  Future<List<Map<String, dynamic>>> _parseProductDocuments(
-    List<DocumentSnapshot> docs,
-  ) async {
-    final List<Map<String, dynamic>> products = [];
+  Future<List<Map>> _parseProductDocuments(List<DocumentSnapshot> docs) async {
+    final products = await Future.wait(
+      docs.map((doc) async {
+        try {
+          final data = doc.data() as Map<String, dynamic>? ?? {};
+          return {
+            'id': doc.id,
+            'name': data['name'] ?? 'No Name',
+            'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+            'image':
+                (data['images'] is List && data['images'].isNotEmpty)
+                    ? data['images'][0]
+                    : '',
+            'stock': data['stock'] ?? 0,
+            'sponsored': data['sponsored'] ?? false,
+            'description': data['description'] ?? '',
+            'category': data['category'] ?? '',
+            'sellerId': data['sellerId'] ?? '',
+            'timestamp': data['createdAt'] ?? Timestamp.now(),
+          };
+        } catch (e) {
+          debugPrint('Product parse error: $e');
+          return {};
+        }
+      }),
+    );
 
-    for (final doc in docs) {
-      try {
-        final data = doc.data() as Map<String, dynamic>? ?? {};
-        products.add({
-          'id': doc.id,
-          'name': data['name'] ?? 'No Name',
-          'price': (data['price'] as num?)?.toDouble() ?? 0.0,
-          'image':
-              (data['images'] is List && data['images'].isNotEmpty)
-                  ? data['images'][0]
-                  : '',
-          'stock': data['stock'] ?? 0,
-          'sponsored': data['sponsored'] ?? false,
-          'description': data['description'] ?? '',
-          'category': data['category'] ?? '',
-          'sellerId': data['sellerId'] ?? '',
-          'timestamp': data['createdAt'] ?? Timestamp.now(),
-        });
-      } catch (e) {
-        debugPrint('Error parsing product ${doc.id}: $e');
-      }
-    }
-
-    return products;
+    return products.where((p) => p.isNotEmpty).toList();
   }
 
   Future<void> _fetchMoreProducts() async {
-    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null) {
+    if (_isFetchingMore || !_hasMoreProducts || _lastProductDocument == null)
       return;
-    }
 
     if (!mounted) return;
     setState(() => _isFetchingMore = true);
 
     try {
-      final query = _firestore
-          .collection('products')
-          .where('approved', isEqualTo: true)
-          .orderBy('createdAt', descending: true)
-          .startAfterDocument(_lastProductDocument!)
-          .limit(10);
-
-      final snapshot = await query.get();
+      final snapshot =
+          await _firestore
+              .collection('products')
+              .where('approved', isEqualTo: true)
+              .orderBy('createdAt', descending: true)
+              .startAfterDocument(_lastProductDocument!)
+              .limit(10)
+              .get();
 
       if (snapshot.docs.isEmpty) {
-        if (mounted) {
-          setState(() => _hasMoreProducts = false);
-        }
+        if (mounted) setState(() => _hasMoreProducts = false);
         return;
       }
 
@@ -378,13 +400,21 @@ class _HomePageState extends State<HomePage> {
 
       if (mounted && newProducts.isNotEmpty) {
         setState(() {
-          _products.addAll(newProducts.where((p) => !p['sponsored']));
-          _sponsoredProducts.addAll(newProducts.where((p) => p['sponsored']));
+          _products.addAll(
+            newProducts
+                .where((p) => !p['sponsored'])
+                .cast<Map<String, dynamic>>(),
+          );
+          _sponsoredProducts.addAll(
+            newProducts
+                .where((p) => p['sponsored'])
+                .cast<Map<String, dynamic>>(),
+          );
           _isFetchingMore = false;
         });
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error fetching more products: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('More products error: $e');
       if (mounted) {
         setState(() => _isFetchingMore = false);
         _showErrorToast('Failed to load more products');
@@ -395,23 +425,18 @@ class _HomePageState extends State<HomePage> {
   Future<void> _getCurrentLocation() async {
     try {
       final serviceEnabled = await _location.serviceEnabled();
-      if (!serviceEnabled) {
-        final enabled = await _location.requestService();
-        if (!enabled) return;
-      }
+      if (!serviceEnabled && !await _location.requestService()) return;
 
-      var permissionGranted = await _location.hasPermission();
-      if (permissionGranted == PermissionStatus.denied) {
-        permissionGranted = await _location.requestPermission();
-        if (permissionGranted != PermissionStatus.granted) return;
+      var permission = await _location.hasPermission();
+      if (permission == PermissionStatus.denied) {
+        permission = await _location.requestPermission();
+        if (permission != PermissionStatus.granted) return;
       }
 
       final locationData = await _location.getLocation();
-      if (mounted) {
-        setState(() => _currentLocation = locationData);
-      }
+      if (mounted) setState(() => _currentLocation = locationData);
     } catch (e) {
-      debugPrint('Error getting location: $e');
+      debugPrint('Location error: $e');
     }
   }
 
@@ -427,9 +452,10 @@ class _HomePageState extends State<HomePage> {
 
       if (mounted) {
         setState(() => _cartCount = doc.size);
+        if (source == Source.server) _cachedCartCount = doc.size;
       }
     } catch (e) {
-      debugPrint('Error fetching cart count: $e');
+      debugPrint('Cart count error: $e');
     }
   }
 
@@ -439,7 +465,11 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
+    final previousCount = _cartCount;
     try {
+      // Optimistic UI update
+      setState(() => _cartCount++);
+
       await _firestore
           .collection('users')
           .doc(_auth.currentUser!.uid)
@@ -454,12 +484,10 @@ class _HomePageState extends State<HomePage> {
             'addedAt': FieldValue.serverTimestamp(),
           });
 
-      if (mounted) {
-        setState(() => _cartCount++);
-        _showSuccessToast('${product['name']} added to cart');
-      }
+      _showSuccessToast('${product['name']} added to cart');
     } catch (e) {
-      debugPrint('Error adding to cart: $e');
+      debugPrint('Add to cart error: $e');
+      setState(() => _cartCount = previousCount);
       _showErrorToast('Failed to add to cart');
     }
   }
@@ -492,7 +520,7 @@ class _HomePageState extends State<HomePage> {
         _showSuccessToast('${product['name']} saved for later');
       }
     } catch (e) {
-      debugPrint('Error toggling saved product: $e');
+      debugPrint('Toggle saved error: $e');
       _showErrorToast('Failed to update saved status');
     }
   }
@@ -507,9 +535,7 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    setState(() {
-      _isSearching = true;
-    });
+    setState(() => _isSearching = true);
 
     try {
       final results = await Future.wait([
@@ -553,43 +579,34 @@ class _HomePageState extends State<HomePage> {
         }),
       ];
 
-      setState(() {
-        _searchResults = combinedResults;
-      });
+      setState(() => _searchResults = combinedResults);
     } catch (e) {
-      debugPrint('Error searching: $e');
+      debugPrint('Search error: $e');
       _showErrorToast('Failed to perform search');
     }
   }
 
   void _navigateToSearchResult(Map<String, dynamic> result) {
-    if (result['type'] == 'product') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (context) => ProductDetailsPage(
-                product: {
-                  'id': result['id'],
-                  'name': result['name'],
-                  'price': result['price'],
-                  'image': result['image'],
-                },
-              ),
-        ),
-      );
-    } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder:
-              (context) => ProductFeed(
-                categoryId: result['id'],
-                categoryName: result['name'],
-              ),
-        ),
-      );
-    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder:
+            (context) =>
+                result['type'] == 'product'
+                    ? ProductDetailsPage(
+                      product: {
+                        'id': result['id'],
+                        'name': result['name'],
+                        'price': result['price'],
+                        'image': result['image'],
+                      },
+                    )
+                    : ProductFeed(
+                      categoryId: result['id'],
+                      categoryName: result['name'],
+                    ),
+      ),
+    );
   }
 
   void _showErrorToast(String message) {
@@ -620,109 +637,111 @@ class _HomePageState extends State<HomePage> {
   void _showBecomeSellerDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.all(20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFF0A1E3D),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.orange, width: 2),
-            ),
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Become a Seller on Blorbmart',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: CachedNetworkImage(
-                    imageUrl:
-                        'https://res.cloudinary.com/ddmazpovi/image/upload/v1747411441/11669652_20943855_wctvmm.jpg',
-                    height: 120,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Join our community of student sellers and start making money from your unused items!',
-                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 14),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildBenefitItem('No listing fees'),
-                    _buildBenefitItem('Campus-wide reach'),
-                    _buildBenefitItem('Secure transactions'),
-                  ],
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Not Now',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(20),
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF0A1E3D),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.orange, width: 2),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Become a Seller on Blorbmart',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
                     ),
-                    ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        const url = 'https://blorb.vercel.app';
-                        if (await canLaunchUrl(Uri.parse(url))) {
-                          await launchUrl(Uri.parse(url));
-                        } else {
-                          throw 'Could not launch $url';
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Seller Portal',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                  ),
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: CachedNetworkImage(
+                      imageUrl:
+                          'https://res.cloudinary.com/ddmazpovi/image/upload/v1747411441/11669652_20943855_wctvmm.jpg',
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Join our community of student sellers and start making money from your unused items!',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontSize: 14,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildBenefitItem('No listing fees'),
+                      _buildBenefitItem('Campus-wide reach'),
+                      _buildBenefitItem('Secure transactions'),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: Text(
+                          'Not Now',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          const url = 'https://blorb.vercel.app';
+                          if (await canLaunchUrl(Uri.parse(url))) {
+                            await launchUrl(Uri.parse(url));
+                          } else {
+                            throw 'Could not launch $url';
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.orange,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: Text(
+                          'Seller Portal',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        );
-      },
     );
   }
 
@@ -836,6 +855,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         children: [
           CarouselSlider.builder(
+            carouselController: _carouselController,
             itemCount: _carouselImages.length,
             options: CarouselOptions(
               height: 220,
@@ -847,58 +867,27 @@ class _HomePageState extends State<HomePage> {
               },
             ),
             itemBuilder: (context, index, _) {
-              return Stack(
-                children: [
-                  Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 5),
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: _carouselImages[index],
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        placeholder:
-                            (_, __) =>
-                                Container(color: Colors.white.withOpacity(0.1)),
-                        errorWidget:
-                            (_, __, ___) => Container(
-                              color: Colors.white.withOpacity(0.1),
-                              child: const Icon(
-                                Icons.error,
-                                color: Colors.white,
-                              ),
-                            ),
-                      ),
-                    ),
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 5),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: CachedNetworkImage(
+                    imageUrl: _carouselImages[index],
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    placeholder:
+                        (_, __) =>
+                            Container(color: Colors.white.withOpacity(0.1)),
+                    errorWidget:
+                        (_, __, ___) => Container(
+                          color: Colors.white.withOpacity(0.1),
+                          child: const Icon(Icons.error, color: Colors.white),
+                        ),
                   ),
-                  Positioned(
-                    bottom: 20,
-                    right: 20,
-                    child: ElevatedButton(
-                      onPressed: () {},
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: Text(
-                        'Buy Now',
-                        style: GoogleFonts.poppins(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+                ),
               );
             },
           ),
@@ -1687,7 +1676,6 @@ class _HomeContent extends StatelessWidget {
         ],
       ),
       body: RefreshIndicator(
-        key: state._refreshIndicatorKey,
         onRefresh: state._initializeData,
         child: CustomScrollView(
           controller: state._scrollController,
