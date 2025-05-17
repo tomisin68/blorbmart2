@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:blorbmart2/Screens/Categories.dart';
 import 'package:blorbmart2/Screens/cart_screen.dart';
 import 'package:blorbmart2/Screens/product_details.dart';
@@ -7,10 +9,12 @@ import 'package:blorbmart2/saved_page.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
-// ignore: unused_import
+import 'package:location/location.dart';
 import 'package:shimmer/shimmer.dart';
 
 class HomePage extends StatefulWidget {
@@ -23,19 +27,31 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  // ignore: unused_field
+  final Location _location = Location();
+  final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
 
+  int _currentIndex = 0;
+
   List<String> _carouselImages = [];
+  bool _isLoadingCarousel = true;
+  bool _isLoadingCategories = true;
+  bool _isLoadingProducts = true;
   List<Map<String, dynamic>> _categories = [];
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _sponsoredProducts = [];
-
-  bool _isLoading = false;
-  int _cartCount = 0;
   int _currentCarouselIndex = 0;
-  int _currentIndex = 0;
+  int _cartCount = 0;
   bool _isSearching = false;
   List<Map<String, dynamic>> _searchResults = [];
+  bool _isInitialLoadComplete = false;
+
+  // Cache variables
+  static List<String>? _cachedCarouselImages;
+  static List<Map<String, dynamic>>? _cachedCategories;
+  static List<Map<String, dynamic>>? _cachedProducts;
+  static List<Map<String, dynamic>>? _cachedSponsoredProducts;
 
   final List<Widget> _screens = [
     const _HomeContent(),
@@ -47,31 +63,16 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
-    _searchController.addListener(_onSearchChanged);
+    _initializeData();
     _setupAuthListener();
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
-  }
-
-  Future<void> _loadInitialData() async {
-    if (mounted) setState(() => _isLoading = true);
-
-    try {
-      await Future.wait([
-        _fetchCarouselImages(),
-        _fetchCategories(),
-        _fetchInitialProducts(),
-      ]);
-    } catch (e) {
-      debugPrint('Error loading initial data: $e');
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
   }
 
   void _setupAuthListener() {
@@ -79,14 +80,84 @@ class _HomePageState extends State<HomePage> {
       if (user != null) {
         _fetchCartCount();
       } else {
-        if (mounted) setState(() => _cartCount = 0);
+        setState(() => _cartCount = 0);
       }
     });
   }
 
+  Future<void> _initializeData() async {
+    if (!_isInitialLoadComplete) {
+      await _fetchInitialDataFromCache();
+    }
+    await _fetchInitialDataFromServer();
+
+    if (!_isInitialLoadComplete) {
+      setState(() => _isInitialLoadComplete = true);
+    }
+  }
+
+  Future<void> _fetchInitialDataFromCache() async {
+    try {
+      if (_cachedCarouselImages != null) {
+        setState(() {
+          _carouselImages = _cachedCarouselImages!;
+          _isLoadingCarousel = false;
+        });
+      }
+
+      if (_cachedCategories != null) {
+        setState(() {
+          _categories = _cachedCategories!;
+          _isLoadingCategories = false;
+        });
+      }
+
+      if (_cachedProducts != null && _cachedSponsoredProducts != null) {
+        setState(() {
+          _products = _cachedProducts!;
+          _sponsoredProducts = _cachedSponsoredProducts!;
+          _isLoadingProducts = false;
+        });
+      }
+
+      if (_auth.currentUser != null) _fetchCartCount(Source.cache);
+    } catch (e) {
+      debugPrint('Error loading from cache: $e');
+    }
+  }
+
+  Future<void> _fetchInitialDataFromServer() async {
+    try {
+      final connectivityResult = await Connectivity().checkConnectivity();
+      if (connectivityResult == ConnectivityResult.none) {
+        if (!_isInitialLoadComplete) {
+          _showErrorToast('No internet connection');
+        }
+        return;
+      }
+
+      await Future.wait([
+        _fetchCarouselImages(),
+        _fetchCategories(),
+        _fetchInitialProducts(),
+        if (_auth.currentUser != null) _fetchCartCount(),
+      ]);
+    } catch (e) {
+      debugPrint('Error loading from server: $e');
+      if (!_isInitialLoadComplete) {
+        _showErrorToast('Failed to load data. Please try again.');
+      }
+    }
+  }
+
   Future<void> _fetchCarouselImages() async {
+    if (!mounted) return;
+
+    setState(() => _isLoadingCarousel = true);
+
     try {
       final snapshot = await _firestore.collection('carouselImages').get();
+
       final images =
           snapshot.docs
               .where((doc) => doc.exists && doc.data().containsKey('imageurl'))
@@ -94,16 +165,29 @@ class _HomePageState extends State<HomePage> {
               .toList();
 
       if (mounted) {
-        setState(() => _carouselImages = images);
+        setState(() {
+          _carouselImages = images;
+          _isLoadingCarousel = false;
+          _cachedCarouselImages = images;
+        });
       }
     } catch (e) {
       debugPrint('Error fetching carousel images: $e');
+      if (mounted) {
+        setState(() => _isLoadingCarousel = false);
+        _showErrorToast('Failed to load carousel images');
+      }
     }
   }
 
   Future<void> _fetchCategories() async {
+    if (!mounted) return;
+
+    setState(() => _isLoadingCategories = true);
+
     try {
       final snapshot = await _firestore.collection('categories').limit(6).get();
+
       final categories =
           snapshot.docs.map((doc) {
             final data = doc.data();
@@ -116,14 +200,26 @@ class _HomePageState extends State<HomePage> {
           }).toList();
 
       if (mounted) {
-        setState(() => _categories = categories);
+        setState(() {
+          _categories = categories;
+          _isLoadingCategories = false;
+          _cachedCategories = categories;
+        });
       }
     } catch (e) {
       debugPrint('Error fetching categories: $e');
+      if (mounted) {
+        setState(() => _isLoadingCategories = false);
+        _showErrorToast('Failed to load categories');
+      }
     }
   }
 
   Future<void> _fetchInitialProducts() async {
+    if (!mounted) return;
+
+    setState(() => _isLoadingProducts = true);
+
     try {
       final snapshot =
           await _firestore
@@ -133,65 +229,69 @@ class _HomePageState extends State<HomePage> {
               .limit(10)
               .get();
 
-      if (snapshot.docs.isEmpty) return;
-
       final products = await _parseProductDocuments(snapshot.docs);
 
       if (mounted) {
         setState(() {
           _products = products.where((p) => !p['sponsored']).toList();
           _sponsoredProducts = products.where((p) => p['sponsored']).toList();
+          _isLoadingProducts = false;
+          _cachedProducts = _products;
+          _cachedSponsoredProducts = _sponsoredProducts;
         });
       }
-    } catch (e) {
-      debugPrint('Error fetching products: $e');
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching products: $e\n$stackTrace');
+      if (mounted) {
+        setState(() => _isLoadingProducts = false);
+        _showErrorToast('Failed to load products');
+      }
     }
   }
 
   Future<List<Map<String, dynamic>>> _parseProductDocuments(
     List<DocumentSnapshot> docs,
   ) async {
-    return docs.map((doc) {
-      try {
-        final data = doc.data() as Map<String, dynamic>? ?? {};
-        return {
-          'id': doc.id,
-          'name': data['name'] ?? 'No Name',
-          'price': (data['price'] as num?)?.toDouble() ?? 0.0,
-          'image':
-              (data['images'] is List && data['images'].isNotEmpty)
-                  ? data['images'][0]
-                  : '',
-          'stock': data['stock'] ?? 0,
-          'sponsored': data['sponsored'] ?? false,
-          'description': data['description'] ?? '',
-          'category': data['category'] ?? '',
-          'sellerId': data['sellerId'] ?? '',
-          'timestamp': data['createdAt'] ?? Timestamp.now(),
-        };
-      } catch (e) {
-        debugPrint('Error parsing product ${doc.id}: $e');
-        return {
-          'id': doc.id,
-          'name': 'Error loading product',
-          'price': 0.0,
-          'image': '',
-          'sponsored': false,
-        };
-      }
-    }).toList();
+    return Future.value(
+      docs
+              .map((doc) {
+                try {
+                  final data = doc.data() as Map<String, dynamic>? ?? {};
+                  return {
+                    'id': doc.id,
+                    'name': data['name'] ?? 'No Name',
+                    'price': (data['price'] as num?)?.toDouble() ?? 0.0,
+                    'image':
+                        (data['images'] is List && data['images'].isNotEmpty)
+                            ? data['images'][0]
+                            : '',
+                    'stock': data['stock'] ?? 0,
+                    'sponsored': data['sponsored'] ?? false,
+                    'description': data['description'] ?? '',
+                    'category': data['category'] ?? '',
+                    'sellerId': data['sellerId'] ?? '',
+                    'timestamp': data['createdAt'] ?? Timestamp.now(),
+                  };
+                } catch (e) {
+                  debugPrint('Error parsing product ${doc.id}: $e');
+                  return {};
+                }
+              })
+              .where((product) => product.isNotEmpty)
+              .toList()
+          as FutureOr<List<Map<String, dynamic>>>?,
+    );
   }
 
-  Future<void> _fetchCartCount() async {
+  Future<void> _fetchCartCount([Source source = Source.server]) async {
     if (_auth.currentUser == null) return;
 
     try {
-      final doc =
-          await _firestore
-              .collection('users')
-              .doc(_auth.currentUser!.uid)
-              .collection('cart')
-              .get();
+      final doc = await _firestore
+          .collection('users')
+          .doc(_auth.currentUser!.uid)
+          .collection('cart')
+          .get(GetOptions(source: source));
 
       if (mounted) {
         setState(() => _cartCount = doc.size);
@@ -202,7 +302,10 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _addToCart(Map<String, dynamic> product) async {
-    if (_auth.currentUser == null) return;
+    if (_auth.currentUser == null) {
+      _showErrorToast('Please login to add items to cart');
+      return;
+    }
 
     try {
       setState(() => _cartCount++);
@@ -220,25 +323,61 @@ class _HomePageState extends State<HomePage> {
             'quantity': 1,
             'addedAt': FieldValue.serverTimestamp(),
           });
+
+      _showSuccessToast('${product['name']} added to cart');
     } catch (e) {
       setState(() => _cartCount--);
       debugPrint('Error adding to cart: $e');
+      _showErrorToast('Failed to add to cart');
+    }
+  }
+
+  Future<void> _toggleSavedProduct(Map<String, dynamic> product) async {
+    if (_auth.currentUser == null) {
+      _showErrorToast('Please login to save products');
+      return;
+    }
+
+    try {
+      final savedRef = _firestore
+          .collection('users')
+          .doc(_auth.currentUser!.uid)
+          .collection('saved')
+          .doc(product['id']);
+
+      final doc = await savedRef.get();
+      if (doc.exists) {
+        await savedRef.delete();
+        _showSuccessToast('${product['name']} removed from saved');
+      } else {
+        await savedRef.set({
+          'productId': product['id'],
+          'name': product['name'],
+          'price': product['price'],
+          'image': product['image'],
+          'savedAt': FieldValue.serverTimestamp(),
+        });
+        _showSuccessToast('${product['name']} saved for later');
+      }
+    } catch (e) {
+      debugPrint('Error toggling saved product: $e');
+      _showErrorToast('Failed to update saved status');
     }
   }
 
   void _onSearchChanged() async {
     final query = _searchController.text.trim();
     if (query.isEmpty) {
-      if (mounted) {
-        setState(() {
-          _isSearching = false;
-          _searchResults.clear();
-        });
-      }
+      setState(() {
+        _isSearching = false;
+        _searchResults.clear();
+      });
       return;
     }
 
-    if (mounted) setState(() => _isSearching = true);
+    setState(() {
+      _isSearching = true;
+    });
 
     try {
       final results = await Future.wait([
@@ -282,11 +421,12 @@ class _HomePageState extends State<HomePage> {
         }),
       ];
 
-      if (mounted) {
-        setState(() => _searchResults = combinedResults);
-      }
+      setState(() {
+        _searchResults = combinedResults;
+      });
     } catch (e) {
       debugPrint('Error searching: $e');
+      _showErrorToast('Failed to perform search');
     }
   }
 
@@ -318,6 +458,26 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
+  }
+
+  void _showErrorToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.redAccent,
+      textColor: Colors.white,
+    );
+  }
+
+  void _showSuccessToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.TOP,
+      backgroundColor: Colors.green,
+      textColor: Colors.white,
+    );
   }
 
   Widget _buildSectionHeader({
@@ -372,6 +532,27 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildImageCarousel() {
+    if (_isLoadingCarousel) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: SizedBox(
+          height: 220,
+          child: Shimmer.fromColors(
+            baseColor: Colors.grey[800]!,
+            highlightColor: Colors.grey[700]!,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange, width: 2),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_carouselImages.isEmpty) {
       return Container(
         height: 220,
@@ -382,13 +563,10 @@ class _HomePageState extends State<HomePage> {
           border: Border.all(color: Colors.orange, width: 2),
         ),
         child: Center(
-          child:
-              _isLoading
-                  ? const CircularProgressIndicator(color: Colors.orange)
-                  : Text(
-                    'No carousel images available',
-                    style: GoogleFonts.poppins(color: Colors.white70),
-                  ),
+          child: Text(
+            'No carousel images available',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
         ),
       );
     }
@@ -405,7 +583,7 @@ class _HomePageState extends State<HomePage> {
               viewportFraction: 0.9,
               enlargeCenterPage: true,
               onPageChanged: (index, _) {
-                if (mounted) setState(() => _currentCarouselIndex = index);
+                setState(() => _currentCarouselIndex = index);
               },
             ),
             itemBuilder: (context, index, _) {
@@ -459,18 +637,50 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildCategories() {
+    if (_isLoadingCategories) {
+      return SizedBox(
+        height: 100,
+        child: ListView.builder(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          itemCount: 6,
+          itemBuilder: (context, index) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: Shimmer.fromColors(
+                baseColor: Colors.grey[800]!,
+                highlightColor: Colors.grey[700]!,
+                child: Column(
+                  children: [
+                    Container(
+                      width: 70,
+                      height: 70,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.orange, width: 2),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(width: 60, height: 10, color: Colors.white),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     if (_categories.isEmpty) {
       return Container(
         height: 100,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Center(
-          child:
-              _isLoading
-                  ? const CircularProgressIndicator(color: Colors.orange)
-                  : Text(
-                    'No categories found',
-                    style: GoogleFonts.poppins(color: Colors.white70),
-                  ),
+          child: Text(
+            'No categories found',
+            style: GoogleFonts.poppins(color: Colors.white70),
+          ),
         ),
       );
     }
@@ -505,7 +715,7 @@ class _HomePageState extends State<HomePage> {
                     height: 70,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.orange, width: 1),
+                      border: Border.all(color: Colors.orange, width: 2),
                       image:
                           category['imageUrl'] != null &&
                                   category['imageUrl'].isNotEmpty
@@ -553,33 +763,62 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildProductsList() {
+    if (_isLoadingProducts) {
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: 4,
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                  width: 170,
+                  child: Shimmer.fromColors(
+                    baseColor: Colors.grey[800]!,
+                    highlightColor: Colors.grey[700]!,
+                    child: Card(
+                      color: const Color(0xFF1A3A6A),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.orange, width: 2),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
     if (_products.isEmpty) {
       return SliverToBoxAdapter(
         child: Container(
           height: 200,
           padding: const EdgeInsets.all(16),
           child: Center(
-            child:
-                _isLoading
-                    ? const CircularProgressIndicator(color: Colors.orange)
-                    : Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.error_outline,
-                          color: Colors.white,
-                          size: 48,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          'No products found',
-                          style: GoogleFonts.poppins(
-                            color: Colors.white,
-                            fontSize: 18,
-                          ),
-                        ),
-                      ],
-                    ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.white, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'No products found',
+                  style: GoogleFonts.poppins(color: Colors.white, fontSize: 18),
+                ),
+                TextButton(
+                  onPressed: _fetchInitialProducts,
+                  child: Text(
+                    'Retry',
+                    style: GoogleFonts.poppins(color: Colors.orange),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -601,8 +840,41 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildSponsoredProductsList() {
-    if (_sponsoredProducts.isEmpty)
+    if (_isLoadingProducts) {
+      return SliverToBoxAdapter(
+        child: SizedBox(
+          height: 240,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            itemCount: 2,
+            itemBuilder: (context, index) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: SizedBox(
+                  width: 170,
+                  child: Shimmer.fromColors(
+                    baseColor: Colors.grey[800]!,
+                    highlightColor: Colors.grey[700]!,
+                    child: Card(
+                      color: const Color(0xFF1A3A6A),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(color: Colors.orange, width: 2),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    }
+
+    if (_sponsoredProducts.isEmpty) {
       return const SliverToBoxAdapter(child: SizedBox.shrink());
+    }
 
     return SliverToBoxAdapter(
       child: SizedBox(
@@ -628,7 +900,7 @@ class _HomePageState extends State<HomePage> {
           color: const Color(0xFF1A3A6A),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.orange, width: 1),
+            side: BorderSide(color: Colors.orange, width: 2),
           ),
           child: InkWell(
             onTap: () {
@@ -640,78 +912,144 @@ class _HomePageState extends State<HomePage> {
               );
             },
             borderRadius: BorderRadius.circular(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Stack(
               children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(12),
-                  ),
-                  child: SizedBox(
-                    height: 140,
-                    width: double.infinity,
-                    child: CachedNetworkImage(
-                      imageUrl: product['image'],
-                      fit: BoxFit.cover,
-                      placeholder:
-                          (_, __) =>
-                              Container(color: Colors.white.withOpacity(0.1)),
-                      errorWidget:
-                          (_, __, ___) => Container(
-                            color: Colors.white.withOpacity(0.1),
-                            child: const Icon(Icons.error, color: Colors.white),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(12),
+                      ),
+                      child: SizedBox(
+                        height: 140,
+                        width: double.infinity,
+                        child: CachedNetworkImage(
+                          imageUrl: product['image'],
+                          fit: BoxFit.cover,
+                          placeholder:
+                              (_, __) => Container(
+                                color: Colors.white.withOpacity(0.1),
+                              ),
+                          errorWidget:
+                              (_, __, ___) => Container(
+                                color: Colors.white.withOpacity(0.1),
+                                child: const Icon(
+                                  Icons.error,
+                                  color: Colors.white,
+                                ),
+                              ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            product['name'],
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
+                          const SizedBox(height: 6),
+                          Text(
+                            '₦${product['price'].toStringAsFixed(2)}',
+                            style: GoogleFonts.poppins(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.orange,
+                              fontSize: 14,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () => _addToCart(product),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                minimumSize: const Size(0, 36),
+                              ),
+                              child: Text(
+                                'Add to Cart',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => _toggleSavedProduct(product),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: StreamBuilder<DocumentSnapshot>(
+                        stream:
+                            _auth.currentUser != null
+                                ? _firestore
+                                    .collection('users')
+                                    .doc(_auth.currentUser!.uid)
+                                    .collection('saved')
+                                    .doc(product['id'])
+                                    .snapshots()
+                                : null,
+                        builder: (context, snapshot) {
+                          final isSaved = snapshot.data?.exists ?? false;
+                          return Icon(
+                            isSaved ? Icons.favorite : Icons.favorite_border,
+                            color: isSaved ? Colors.red : Colors.white,
+                            size: 20,
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        product['name'],
+                if (product['sponsored'])
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'Sponsored',
                         style: GoogleFonts.poppins(
                           color: Colors.white,
-                          fontSize: 12,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '₦${product['price'].toStringAsFixed(2)}',
-                        style: GoogleFonts.poppins(
+                          fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                          fontSize: 14,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () => _addToCart(product),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            minimumSize: const Size(0, 36),
-                          ),
-                          child: Text(
-                            'Add to Cart',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -744,7 +1082,7 @@ class _HomePageState extends State<HomePage> {
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: BorderSide(color: Colors.orange, width: 1),
+            side: BorderSide(color: Colors.orange, width: 2),
           ),
           child: ListTile(
             leading:
@@ -832,7 +1170,7 @@ class _HomeContent extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.1),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.orange.withOpacity(0.5), width: 1),
+            border: Border.all(color: Colors.orange.withOpacity(0.5), width: 2),
           ),
           child: TextField(
             controller: state._searchController,
@@ -888,7 +1226,7 @@ class _HomeContent extends StatelessWidget {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: state._loadInitialData,
+        onRefresh: state._initializeData,
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
@@ -932,6 +1270,12 @@ class _HomeContent extends StatelessWidget {
                 ),
               ),
               state._buildSponsoredProductsList(),
+              SliverToBoxAdapter(
+                child: state._buildSectionHeader(
+                  title: 'Top Sellers',
+                  onSeeAll: () {},
+                ),
+              ),
               const SliverToBoxAdapter(child: SizedBox(height: 80)),
             ],
           ],
