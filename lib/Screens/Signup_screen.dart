@@ -6,11 +6,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:toastification/toastification.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class SignupPage extends StatefulWidget {
   const SignupPage({super.key});
@@ -24,6 +25,7 @@ class _SignupPageState extends State<SignupPage> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _googleSignIn = GoogleSignIn();
 
   bool _acceptTerms = false;
   bool _isLoading = false;
@@ -178,13 +180,70 @@ class _SignupPageState extends State<SignupPage> {
     }
   }
 
+  Future<void> _signInWithGoogle() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Trigger the Google Sign In flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credential
+      final UserCredential userCredential = await FirebaseAuth.instance
+          .signInWithCredential(credential);
+
+      // Check if user is new or existing
+      if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+        // New user - store their data
+        await _storeUserData(
+          userCredential.user!,
+          userCredential.user?.displayName ?? 'Google User',
+          userCredential.user?.email ?? '',
+        );
+
+        _showSuccessToast('Welcome! Account created successfully with Google.');
+      } else {
+        _showSuccessToast('Welcome back! Signed in successfully with Google.');
+      }
+
+      // Navigate to home page
+      if (mounted) {
+        _navigateToHome();
+      }
+    } on FirebaseAuthException catch (e) {
+      _handleFirebaseAuthError(e);
+    } catch (e) {
+      _showErrorToast('Failed to sign in with Google. Please try again.');
+      if (kDebugMode) {
+        print('Google Sign-In error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
   Future<void> _storeUserData(User user, String name, String email) async {
     try {
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'name': name,
         'email': email,
         'uid': user.uid,
-        'emailVerified': false,
+        'emailVerified': user.emailVerified,
         'createdAt': FieldValue.serverTimestamp(),
         'lastLogin': FieldValue.serverTimestamp(),
         'profileComplete': false,
@@ -221,29 +280,63 @@ class _SignupPageState extends State<SignupPage> {
       case 'network-request-failed':
         message = 'Network error. Please check your connection.';
         break;
+      case 'account-exists-with-different-credential':
+        message = 'Account already exists with a different credential.';
+        break;
+      case 'user-disabled':
+        message = 'This account has been disabled.';
+        break;
+      case 'user-not-found':
+        message = 'No account found with this email.';
+        break;
+      case 'wrong-password':
+        message = 'Incorrect password. Please try again.';
+        break;
     }
     _showErrorToast(message);
   }
 
   void _showErrorToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.TOP,
+    toastification.show(
+      context: context,
+      type: ToastificationType.error,
+      style: ToastificationStyle.fillColored,
+      title: Text('Error'),
+      description: Text(message),
+      autoCloseDuration: const Duration(seconds: 5),
+      animationDuration: const Duration(milliseconds: 300),
+      icon: const Icon(Icons.error_outline),
       backgroundColor: Colors.redAccent,
-      textColor: Colors.white,
-      fontSize: 16.0,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.always,
+      closeOnClick: false,
+      pauseOnHover: true,
     );
   }
 
   void _showSuccessToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.TOP,
+    toastification.show(
+      context: context,
+      type: ToastificationType.success,
+      style: ToastificationStyle.fillColored,
+      title: Text('Success'),
+      description: Text(message),
+      autoCloseDuration: const Duration(seconds: 5),
+      animationDuration: const Duration(milliseconds: 300),
+      icon: const Icon(Icons.check_circle_outline),
       backgroundColor: Colors.green,
-      textColor: Colors.white,
-      fontSize: 16.0,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.always,
+      closeOnClick: false,
+      pauseOnHover: true,
     );
   }
 
@@ -414,7 +507,7 @@ class _SignupPageState extends State<SignupPage> {
                       _buildSocialButton(
                         icon: Icons.g_mobiledata,
                         text: 'Continue with Google',
-                        onPressed: () {},
+                        onPressed: _signInWithGoogle,
                       ),
                       const SizedBox(height: 20),
                       TextButton(

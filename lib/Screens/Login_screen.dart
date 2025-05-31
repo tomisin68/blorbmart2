@@ -1,11 +1,14 @@
 import 'package:blorbmart2/Screens/Signup_screen.dart';
 import 'package:blorbmart2/Screens/home_page.dart';
 import 'package:blorbmart2/auth_services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:toastification/toastification.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter/foundation.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -18,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _googleSignIn = GoogleSignIn();
 
   bool _isLoading = false;
   bool _rememberMe = false;
@@ -56,6 +60,17 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('email', email);
 
+        // Save credentials if remember me is checked
+        if (_rememberMe) {
+          await prefs.setString('savedEmail', email);
+          await prefs.setString('savedPassword', password);
+          await prefs.setBool('rememberMe', true);
+        } else {
+          await prefs.remove('savedEmail');
+          await prefs.remove('savedPassword');
+          await prefs.setBool('rememberMe', false);
+        }
+
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -69,21 +84,99 @@ class _LoginScreenState extends State<LoginScreen> {
         }
       }
     } on FirebaseAuthException catch (e) {
-      String message = 'An unknown error occurred.';
-      if (e.code == 'invalid-email') {
-        message = 'Invalid email address.';
-      } else if (e.code == 'user-disabled') {
-        message = 'This user has been disabled.';
-      } else if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else if (e.code == 'wrong-password') {
-        message = 'Incorrect password.';
-      }
-      _showErrorToast(message);
+      _handleFirebaseAuthError(e);
     } catch (e) {
       _showErrorToast('Failed to log in. Please try again.');
+      if (kDebugMode) {
+        print('Login error: $e');
+      }
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _signInWithGoogle() async {
+    try {
+      setState(() => _isLoading = true);
+
+      // Trigger the Google Sign In flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Obtain the auth details from the request
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // Sign in to Firebase with the Google credential
+      final UserCredential userCredential = await FirebaseAuth.instance
+          .signInWithCredential(credential);
+
+      // Check if user is new or existing
+      if (userCredential.additionalUserInfo?.isNewUser ?? false) {
+        // New user - store their data
+        await _storeUserData(
+          userCredential.user!,
+          userCredential.user?.displayName ?? 'Google User',
+          userCredential.user?.email ?? '',
+        );
+
+        _showSuccessToast('Welcome! Signed in successfully with Google.');
+      } else {
+        _showSuccessToast('Welcome back! Signed in successfully with Google.');
+      }
+
+      // Navigate to home page
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const HomePage(),
+            transitionsBuilder:
+                (_, a, __, c) => FadeTransition(opacity: a, child: c),
+            transitionDuration: const Duration(milliseconds: 500),
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      _handleFirebaseAuthError(e);
+    } catch (e) {
+      _showErrorToast('Failed to sign in with Google. Please try again.');
+      if (kDebugMode) {
+        print('Google Sign-In error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _storeUserData(User user, String name, String email) async {
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
+        'name': name,
+        'email': email,
+        'uid': user.uid,
+        'emailVerified': user.emailVerified,
+        'createdAt': FieldValue.serverTimestamp(),
+        'lastLogin': FieldValue.serverTimestamp(),
+        'profileComplete': false,
+      }, SetOptions(merge: true));
+    } catch (e) {
+      if (kDebugMode) {
+        print('Error storing user data: $e');
+      }
     }
   }
 
@@ -116,29 +209,84 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       _showErrorToast('An error occurred. Please try again.');
     } finally {
-      setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
+  void _handleFirebaseAuthError(FirebaseAuthException e) {
+    String message = 'An unknown error occurred.';
+    switch (e.code) {
+      case 'invalid-email':
+        message = 'Invalid email address.';
+        break;
+      case 'user-disabled':
+        message = 'This user has been disabled.';
+        break;
+      case 'user-not-found':
+        message = 'No user found for that email.';
+        break;
+      case 'wrong-password':
+        message = 'Incorrect password.';
+        break;
+      case 'account-exists-with-different-credential':
+        message = 'Account already exists with a different credential.';
+        break;
+      case 'network-request-failed':
+        message = 'Network error. Please check your connection.';
+        break;
+      case 'too-many-requests':
+        message = 'Too many requests. Please try again later.';
+        break;
+      case 'operation-not-allowed':
+        message = 'Email/password accounts are not enabled.';
+        break;
+    }
+    _showErrorToast(message);
+  }
+
   void _showErrorToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.TOP,
+    toastification.show(
+      context: context,
+      type: ToastificationType.error,
+      style: ToastificationStyle.fillColored,
+      title: Text('Error'),
+      description: Text(message),
+      autoCloseDuration: const Duration(seconds: 5),
+      animationDuration: const Duration(milliseconds: 300),
+      icon: const Icon(Icons.error_outline),
       backgroundColor: Colors.redAccent,
-      textColor: Colors.white,
-      fontSize: 16.0,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.always,
+      closeOnClick: false,
+      pauseOnHover: true,
     );
   }
 
   void _showSuccessToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.TOP,
+    toastification.show(
+      context: context,
+      type: ToastificationType.success,
+      style: ToastificationStyle.fillColored,
+      title: Text('Success'),
+      description: Text(message),
+      autoCloseDuration: const Duration(seconds: 5),
+      animationDuration: const Duration(milliseconds: 300),
+      icon: const Icon(Icons.check_circle_outline),
       backgroundColor: Colors.green,
-      textColor: Colors.white,
-      fontSize: 16.0,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.always,
+      closeOnClick: false,
+      pauseOnHover: true,
     );
   }
 
@@ -230,7 +378,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       _buildSocialButton(
                         icon: Icons.g_mobiledata,
                         text: 'Continue with Google',
-                        onPressed: () {},
+                        onPressed: _signInWithGoogle,
                       ),
                       const Spacer(flex: 2),
                     ],

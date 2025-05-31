@@ -1,11 +1,10 @@
 import 'dart:async';
-
 import 'package:blorbmart2/Screens/home_page.dart';
 import 'package:blorbmart2/Screens/Login_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:fluttertoast/fluttertoast.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:toastification/toastification.dart';
 
 class VerifyEmailPage extends StatefulWidget {
   final User user;
@@ -39,13 +38,29 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
     await _checkEmailVerified();
 
     // Send verification email if not already verified
-    if (!_isVerified) {
-      await widget.user.sendEmailVerification();
-      _showSuccessToast('Verification email sent to ${widget.user.email}');
+    if (!_isVerified && mounted) {
+      await _sendVerificationEmail();
     }
 
     // Start periodic checking
     _startVerificationCheckTimer();
+  }
+
+  Future<void> _sendVerificationEmail() async {
+    try {
+      await widget.user.sendEmailVerification();
+      _showSuccessToast(
+        'Verification email sent to ${widget.user.email}',
+        description: 'Please check your inbox and verify your email address.',
+      );
+    } catch (e) {
+      if (mounted) {
+        _showErrorToast(
+          'Failed to send verification email',
+          description: 'Please try again later.',
+        );
+      }
+    }
   }
 
   void _startVerificationCheckTimer() {
@@ -72,11 +87,19 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
 
       if (currentUser != null && currentUser.emailVerified) {
         _verificationCheckTimer?.cancel();
-        setState(() => _isVerified = true);
+        setState(() {
+          _isVerified = true;
+          _isChecking = false;
+        });
 
         // Show verification success message
-        setState(() => _showVerifiedMessage = true);
-        _showSuccessToast('Email verified successfully!');
+        if (mounted) {
+          setState(() => _showVerifiedMessage = true);
+          _showSuccessToast(
+            'Email verified successfully!',
+            description: 'Your email has been successfully verified.',
+          );
+        }
 
         // Navigate to home after a brief delay
         await Future.delayed(const Duration(seconds: 2));
@@ -86,10 +109,13 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
       }
     } catch (e) {
       if (mounted) {
-        _showErrorToast('Error checking verification status');
+        _showErrorToast(
+          'Verification check failed',
+          description: 'Unable to verify your email status. Please try again.',
+        );
       }
     } finally {
-      if (mounted) {
+      if (mounted && !_isVerified) {
         setState(() => _isChecking = false);
       }
     }
@@ -99,9 +125,15 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
     setState(() => _isResending = true);
     try {
       await widget.user.sendEmailVerification();
-      _showSuccessToast('Verification email resent successfully');
+      _showSuccessToast(
+        'Verification email resent',
+        description: 'Please check your inbox for the verification link.',
+      );
     } catch (e) {
-      _showErrorToast('Failed to resend verification email');
+      _showErrorToast(
+        'Failed to resend verification email',
+        description: 'Please check your connection and try again.',
+      );
     } finally {
       if (mounted) {
         setState(() => _isResending = false);
@@ -133,25 +165,47 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
     );
   }
 
-  void _showErrorToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.TOP,
+  void _showErrorToast(String title, {String? description}) {
+    toastification.show(
+      context: context,
+      type: ToastificationType.error,
+      style: ToastificationStyle.fillColored,
+      title: Text(title),
+      description: description != null ? Text(description) : null,
+      autoCloseDuration: const Duration(seconds: 5),
+      animationDuration: const Duration(milliseconds: 300),
+      icon: const Icon(Icons.error_outline),
       backgroundColor: Colors.redAccent,
-      textColor: Colors.white,
-      fontSize: 16.0,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.always,
+      closeOnClick: false,
+      pauseOnHover: true,
     );
   }
 
-  void _showSuccessToast(String message) {
-    Fluttertoast.showToast(
-      msg: message,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.TOP,
+  void _showSuccessToast(String title, {String? description}) {
+    toastification.show(
+      context: context,
+      type: ToastificationType.success,
+      style: ToastificationStyle.fillColored,
+      title: Text(title),
+      description: description != null ? Text(description) : null,
+      autoCloseDuration: const Duration(seconds: 5),
+      animationDuration: const Duration(milliseconds: 300),
+      icon: const Icon(Icons.check_circle_outline),
       backgroundColor: Colors.green,
-      textColor: Colors.white,
-      fontSize: 16.0,
+      foregroundColor: Colors.white,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: BorderRadius.circular(12),
+      showProgressBar: true,
+      closeButtonShowType: CloseButtonShowType.always,
+      closeOnClick: false,
+      pauseOnHover: true,
     );
   }
 

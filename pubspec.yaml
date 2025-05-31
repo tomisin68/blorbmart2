@@ -32,6 +32,8 @@ dependencies:
   flutter_launcher_icons: ^0.14.3
   connectivity_plus: ^6.1.4
   photo_view: ^0.15.0
+  google_sign_in: ^6.3.0
+  toastification: ^3.0.2
 
 dev_dependencies:
   flutter_test:
