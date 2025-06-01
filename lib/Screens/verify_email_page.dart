@@ -145,7 +145,7 @@ class _VerifyEmailPageState extends State<VerifyEmailPage> {
     Navigator.pushReplacement(
       context,
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const HomePage(),
+        pageBuilder: (_, __, ___) => HomePage(onTabChange: (int) {}),
         transitionsBuilder:
             (_, a, __, c) => FadeTransition(opacity: a, child: c),
         transitionDuration: const Duration(milliseconds: 500),

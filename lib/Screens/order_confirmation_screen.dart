@@ -71,7 +71,9 @@ class OrderConfirmationScreen extends StatelessWidget {
                   onPressed: () {
                     Navigator.pushAndRemoveUntil(
                       context,
-                      MaterialPageRoute(builder: (context) => const HomePage()),
+                      MaterialPageRoute(
+                        builder: (context) => HomePage(onTabChange: (int) {}),
+                      ),
                       (route) => false,
                     );
                   },
