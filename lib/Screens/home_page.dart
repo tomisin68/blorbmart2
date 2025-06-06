@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -24,6 +26,12 @@ class _HomePageState extends State<HomePage> {
   int _currentCarouselIndex = 0;
   late PageController _carouselController;
   List<String> _savedItems = [];
+  Timer? _carouselTimer;
+  List<String> _carouselImages = [];
+  List<DocumentSnapshot> _categories = [];
+  List<DocumentSnapshot> _products = [];
+  List<DocumentSnapshot> _recentProducts = [];
+  List<DocumentSnapshot> _topSellers = [];
 
   @override
   void initState() {
@@ -32,29 +40,105 @@ class _HomePageState extends State<HomePage> {
     _loadUserData();
     _loadCartCount();
     _loadSavedItems();
-    // Auto-scroll carousel
-    _startCarouselAutoScroll();
+    _loadCarouselImages();
+    _loadCategories();
+    _loadProducts();
+    _loadRecentProducts();
+    _loadTopSellers();
   }
 
   @override
   void dispose() {
     _carouselController.dispose();
     _searchController.dispose();
+    _carouselTimer?.cancel();
     super.dispose();
   }
 
   void _startCarouselAutoScroll() {
-    Future.delayed(const Duration(seconds: 5), () {
-      if (_carouselController.hasClients) {
-        final nextPage = _currentCarouselIndex + 1;
+    _carouselTimer?.cancel();
+    _carouselTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (_carouselController.hasClients && _carouselImages.isNotEmpty) {
+        final nextPage = (_currentCarouselIndex + 1) % _carouselImages.length;
         _carouselController.animateToPage(
           nextPage,
           duration: const Duration(milliseconds: 500),
           curve: Curves.easeInOut,
         );
-        _startCarouselAutoScroll();
       }
     });
+  }
+
+  Future<void> _loadCarouselImages() async {
+    try {
+      final snapshot = await _firestore.collection('carouselImages').get();
+      setState(() {
+        _carouselImages =
+            snapshot.docs.map((doc) => doc.get('imageurl') as String).toList();
+      });
+      if (_carouselImages.isNotEmpty) {
+        _startCarouselAutoScroll();
+      }
+    } catch (e) {
+      _showErrorToast('Failed to load carousel images');
+    }
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final snapshot = await _firestore.collection('categories').get();
+      setState(() {
+        _categories = snapshot.docs;
+      });
+    } catch (e) {
+      _showErrorToast('Failed to load categories');
+    }
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final snapshot = await _firestore.collection('products').limit(8).get();
+      setState(() {
+        _products = snapshot.docs;
+      });
+    } catch (e) {
+      _showErrorToast('Failed to load products');
+    }
+  }
+
+  Future<void> _loadRecentProducts() async {
+    try {
+      final snapshot =
+          await _firestore
+              .collection('products')
+              .orderBy('createdAt', descending: true)
+              .limit(4)
+              .get();
+      setState(() {
+        _recentProducts = snapshot.docs;
+      });
+    } catch (e) {
+      _showErrorToast('Failed to load recent products');
+    }
+  }
+
+  Future<void> _loadTopSellers() async {
+    try {
+      final snapshot =
+          await _firestore
+              .collection('products')
+              .orderBy(
+                'stock',
+                descending: false,
+              ) // Assuming low stock means popular
+              .limit(4)
+              .get();
+      setState(() {
+        _topSellers = snapshot.docs;
+      });
+    } catch (e) {
+      _showErrorToast('Failed to load top sellers');
+    }
   }
 
   Future<void> _loadUserData() async {
@@ -217,27 +301,46 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey[50],
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // App Bar
-              _buildAppBar(theme, isDarkMode),
-              const SizedBox(height: 16),
-              // Search Bar
-              _buildSearchBar(theme, isDarkMode),
-              const SizedBox(height: 24),
-              // Carousel Section
-              _buildCarouselSection(theme, isDarkMode),
-              const SizedBox(height: 24),
-              // Categories Section
-              _buildCategoriesSection(theme, isDarkMode),
-              const SizedBox(height: 24),
-              // Products Section
-              _buildProductsSection(theme, isDarkMode),
-              const SizedBox(height: 24),
-            ],
-          ),
+        child: CustomScrollView(
+          slivers: [
+            // App Bar
+            SliverToBoxAdapter(child: _buildAppBar(theme, isDarkMode)),
+            // Search Bar
+            SliverToBoxAdapter(child: _buildSearchBar(theme, isDarkMode)),
+            // Carousel Section
+            SliverToBoxAdapter(child: _buildCarouselSection(theme, isDarkMode)),
+            // Categories Section
+            SliverToBoxAdapter(
+              child: _buildCategoriesSection(theme, isDarkMode),
+            ),
+            // Recently Added Section
+            SliverToBoxAdapter(
+              child: _buildSectionTitle('Recently Added', theme, isDarkMode),
+            ),
+            SliverToBoxAdapter(
+              child: _buildHorizontalProducts(
+                _recentProducts,
+                theme,
+                isDarkMode,
+              ),
+            ),
+            // Top Sellers Section
+            SliverToBoxAdapter(
+              child: _buildSectionTitle('Top Sellers', theme, isDarkMode),
+            ),
+            SliverToBoxAdapter(
+              child: _buildHorizontalProducts(_topSellers, theme, isDarkMode),
+            ),
+            // Featured Products Section
+            SliverToBoxAdapter(
+              child: _buildSectionTitle('Featured Products', theme, isDarkMode),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: _buildProductsGrid(_products, theme, isDarkMode),
+            ),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+          ],
         ),
       ),
       bottomNavigationBar: _buildBottomNavBar(theme),
@@ -246,7 +349,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildAppBar(ThemeData theme, bool isDarkMode) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -306,7 +409,7 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildSearchBar(ThemeData theme, bool isDarkMode) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: SizedBox(
         height: 50,
         child: TextField(
@@ -344,84 +447,52 @@ class _HomePageState extends State<HomePage> {
       children: [
         SizedBox(
           height: 180,
-          child: StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('carouselImages').snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return _buildCarouselShimmer();
-              }
-              if (snapshot.hasError) {
-                return Center(
-                  child: Text(
-                    'Failed to load carousel',
-                    style: theme.textTheme.bodyMedium,
+          child:
+              _carouselImages.isEmpty
+                  ? _buildCarouselShimmer()
+                  : PageView.builder(
+                    controller: _carouselController,
+                    itemCount: _carouselImages.length,
+                    onPageChanged: (index) {
+                      setState(() {
+                        _currentCarouselIndex = index;
+                      });
+                    },
+                    itemBuilder: (context, index) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: CachedNetworkImage(
+                            imageUrl: _carouselImages[index],
+                            fit: BoxFit.cover,
+                            placeholder:
+                                (context, url) => Container(
+                                  color:
+                                      isDarkMode
+                                          ? Colors.grey[800]
+                                          : Colors.grey[200],
+                                ),
+                            errorWidget:
+                                (context, url, error) => Container(
+                                  color:
+                                      isDarkMode
+                                          ? Colors.grey[800]
+                                          : Colors.grey[200],
+                                  child: const Icon(Icons.error),
+                                ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                );
-              }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return Center(
-                  child: Text(
-                    'No carousel images found',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                );
-              }
-
-              final images =
-                  snapshot.data!.docs
-                      .map((doc) => doc.get('imageurl') as String)
-                      .toList();
-
-              return PageView.builder(
-                controller: _carouselController,
-                itemCount: images.length,
-                onPageChanged: (index) {
-                  setState(() {
-                    _currentCarouselIndex = index;
-                  });
-                },
-                itemBuilder: (context, index) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: CachedNetworkImage(
-                        imageUrl: images[index],
-                        fit: BoxFit.cover,
-                        placeholder:
-                            (context, url) => Container(
-                              color:
-                                  isDarkMode
-                                      ? Colors.grey[800]
-                                      : Colors.grey[200],
-                            ),
-                        errorWidget:
-                            (context, url, error) => Container(
-                              color:
-                                  isDarkMode
-                                      ? Colors.grey[800]
-                                      : Colors.grey[200],
-                              child: const Icon(Icons.error),
-                            ),
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
         ),
         const SizedBox(height: 12),
-        StreamBuilder<QuerySnapshot>(
-          stream: _firestore.collection('carouselImages').snapshots(),
-          builder: (context, snapshot) {
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return const SizedBox();
-            }
-            final itemCount = snapshot.data!.docs.length;
-            return Row(
+        _carouselImages.isEmpty
+            ? const SizedBox()
+            : Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: List.generate(itemCount, (index) {
+              children: List.generate(_carouselImages.length, (index) {
                 return Container(
                   width: 8,
                   height: 8,
@@ -437,9 +508,8 @@ class _HomePageState extends State<HomePage> {
                   ),
                 );
               }),
-            );
-          },
-        ),
+            ),
+        const SizedBox(height: 24),
       ],
     );
   }
@@ -451,6 +521,7 @@ class _HomePageState extends State<HomePage> {
         baseColor: Colors.grey[300]!,
         highlightColor: Colors.grey[100]!,
         child: Container(
+          height: 180,
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(12),
@@ -466,107 +537,117 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Categories',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: isDarkMode ? Colors.white : Colors.black,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Categories',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: isDarkMode ? Colors.white : Colors.black,
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  // Navigate to all categories page
+                  widget.onTabChange(
+                    4,
+                  ); // Assuming 4 is the categories page index
+                },
+                child: Text(
+                  'See All',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: const Color(0xFF004aad),
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 16),
           SizedBox(
             height: 100,
-            child: StreamBuilder<QuerySnapshot>(
-              stream: _firestore.collection('categories').snapshots(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return _buildCategoriesShimmer();
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text(
-                      'Failed to load categories',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  );
-                }
-                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                  return Center(
-                    child: Text(
-                      'No categories found',
-                      style: theme.textTheme.bodyMedium,
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: snapshot.data!.docs.length,
-                  itemBuilder: (context, index) {
-                    final category = snapshot.data!.docs[index];
-                    return GestureDetector(
-                      onTap: () {
-                        // Navigate to category products
-                      },
-                      child: Container(
-                        width: 80,
-                        margin: EdgeInsets.only(
-                          right:
-                              index == snapshot.data!.docs.length - 1 ? 0 : 16,
-                        ),
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 60,
-                              height: 60,
-                              decoration: BoxDecoration(
-                                color:
-                                    isDarkMode
-                                        ? Colors.grey[800]
-                                        : Colors.grey[200],
-                                borderRadius: BorderRadius.circular(12),
+            child:
+                _categories.isEmpty
+                    ? _buildCategoriesShimmer()
+                    : ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _categories.length,
+                      itemBuilder: (context, index) {
+                        final category = _categories[index];
+                        return GestureDetector(
+                          onTap: () {
+                            // Navigate to category products page
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => CategoryProductsPage(
+                                      categoryId: category.id,
+                                      categoryName: category.get('name'),
+                                    ),
                               ),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(12),
-                                child: CachedNetworkImage(
-                                  imageUrl: category.get('imageurl'),
-                                  fit: BoxFit.cover,
-                                  placeholder:
-                                      (context, url) => Container(
-                                        color:
-                                            isDarkMode
-                                                ? Colors.grey[800]
-                                                : Colors.grey[200],
-                                      ),
-                                  errorWidget:
-                                      (context, url, error) => Container(
-                                        color:
-                                            isDarkMode
-                                                ? Colors.grey[800]
-                                                : Colors.grey[200],
-                                        child: const Icon(Icons.error),
-                                      ),
+                            );
+                          },
+                          child: Container(
+                            width: 80,
+                            margin: EdgeInsets.only(
+                              right: index == _categories.length - 1 ? 0 : 16,
+                            ),
+                            child: Column(
+                              children: [
+                                Container(
+                                  width: 60,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isDarkMode
+                                            ? Colors.grey[800]
+                                            : Colors.grey[200],
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: CachedNetworkImage(
+                                      imageUrl: category.get('imageUrl'),
+                                      fit: BoxFit.cover,
+                                      placeholder:
+                                          (context, url) => Container(
+                                            color:
+                                                isDarkMode
+                                                    ? Colors.grey[800]
+                                                    : Colors.grey[200],
+                                          ),
+                                      errorWidget:
+                                          (context, url, error) => Container(
+                                            color:
+                                                isDarkMode
+                                                    ? Colors.grey[800]
+                                                    : Colors.grey[200],
+                                            child: const Icon(Icons.error),
+                                          ),
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  category.get('name'),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color:
+                                        isDarkMode
+                                            ? Colors.white
+                                            : Colors.black,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              category.get('name'),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: isDarkMode ? Colors.white : Colors.black,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
+                          ),
+                        );
+                      },
+                    ),
           ),
+          const SizedBox(height: 24),
         ],
       ),
     );
@@ -607,322 +688,228 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildProductsSection(ThemeData theme, bool isDarkMode) {
+  Widget _buildSectionTitle(String title, ThemeData theme, bool isDarkMode) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Featured Products',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: isDarkMode ? Colors.white : Colors.black,
-            ),
-          ),
-          const SizedBox(height: 16),
-          StreamBuilder<QuerySnapshot>(
-            stream: _firestore.collection('products').limit(8).snapshots(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return _buildProductsShimmer();
-              }
-              if (snapshot.hasError) {
-                return Center(
-                  child: Text(
-                    'Failed to load products',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                );
-              }
-              if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                return Center(
-                  child: Text(
-                    'No products found',
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                );
-              }
-
-              return MasonryGridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                mainAxisSpacing: 16,
-                crossAxisSpacing: 16,
-                itemCount: snapshot.data!.docs.length,
-                itemBuilder: (context, index) {
-                  final product = snapshot.data!.docs[index];
-                  final productId = product.id;
-                  final hasDiscount =
-                      product.get('discountPrice') != null &&
-                      product.get('discountPrice') < product.get('price');
-                  final isSaved = _savedItems.contains(productId);
-
-                  return GestureDetector(
-                    onTap: () {
-                      // Navigate to product details
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isDarkMode ? Colors.grey[800] : Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          if (!isDarkMode)
-                            BoxShadow(
-                              color: Colors.grey.withOpacity(0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                        ],
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Stack(
-                            children: [
-                              ClipRRect(
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(12),
-                                ),
-                                child: AspectRatio(
-                                  aspectRatio: 1,
-                                  child: CachedNetworkImage(
-                                    imageUrl: product.get('images')[0],
-                                    fit: BoxFit.cover,
-                                    placeholder:
-                                        (context, url) => Container(
-                                          color:
-                                              isDarkMode
-                                                  ? Colors.grey[700]
-                                                  : Colors.grey[200],
-                                        ),
-                                    errorWidget:
-                                        (context, url, error) => Container(
-                                          color:
-                                              isDarkMode
-                                                  ? Colors.grey[700]
-                                                  : Colors.grey[200],
-                                          child: const Icon(Icons.error),
-                                        ),
-                                  ),
-                                ),
-                              ),
-                              if (hasDiscount)
-                                Positioned(
-                                  top: 8,
-                                  left: 8,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFff914d),
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      '${(((product.get('price')) - product.get('discountPrice')) / product.get('price') * 100).toStringAsFixed(0)}% OFF',
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: IconButton(
-                                  icon: Icon(
-                                    isSaved
-                                        ? Icons.favorite
-                                        : Icons.favorite_border,
-                                    color: isSaved ? Colors.red : Colors.white,
-                                    size: 24,
-                                  ),
-                                  onPressed: () {
-                                    _toggleSaveItem(productId);
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  product.get('name'),
-                                  style: theme.textTheme.bodyMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    color:
-                                        isDarkMode
-                                            ? Colors.white
-                                            : Colors.black,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  product.get('brandName'),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color:
-                                        isDarkMode
-                                            ? Colors.grey[400]
-                                            : Colors.grey[600],
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Text(
-                                      '\$${product.get('discountPrice')?.toStringAsFixed(2) ?? product.get('price').toStringAsFixed(2)}',
-                                      style: theme.textTheme.bodyLarge
-                                          ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                            color: const Color(0xFF004aad),
-                                          ),
-                                    ),
-                                    if (hasDiscount)
-                                      Padding(
-                                        padding: const EdgeInsets.only(left: 8),
-                                        child: Text(
-                                          '\$${product.get('price').toStringAsFixed(2)}',
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                                decoration:
-                                                    TextDecoration.lineThrough,
-                                                color:
-                                                    isDarkMode
-                                                        ? Colors.grey[500]
-                                                        : Colors.grey[600],
-                                              ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ],
+      child: Text(
+        title,
+        style: theme.textTheme.titleMedium?.copyWith(
+          fontWeight: FontWeight.bold,
+          color: isDarkMode ? Colors.white : Colors.black,
+        ),
       ),
     );
   }
 
-  Widget _buildProductsShimmer() {
-    return MasonryGridView.count(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisCount: 2,
-      mainAxisSpacing: 16,
-      crossAxisSpacing: 16,
-      itemCount: 4,
-      itemBuilder: (context, index) {
-        return Shimmer.fromColors(
-          baseColor: Colors.grey[300]!,
-          highlightColor: Colors.grey[100]!,
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildHorizontalProducts(
+    List<DocumentSnapshot> products,
+    ThemeData theme,
+    bool isDarkMode,
+  ) {
+    return SizedBox(
+      height: 220,
+      child:
+          products.isEmpty
+              ? _buildProductsShimmer(isHorizontal: true)
+              : ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
+                itemCount: products.length,
+                itemBuilder: (context, index) {
+                  final product = products[index];
+                  return _buildProductCard(
+                    product,
+                    theme,
+                    isDarkMode,
+                    isHorizontal: true,
+                  );
+                },
+              ),
+    );
+  }
+
+  SliverGrid _buildProductsGrid(
+    List<DocumentSnapshot> products,
+    ThemeData theme,
+    bool isDarkMode,
+  ) {
+    return SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.7,
+      ),
+      delegate: SliverChildBuilderDelegate((context, index) {
+        return products.isEmpty
+            ? _buildProductShimmer()
+            : _buildProductCard(products[index], theme, isDarkMode);
+      }, childCount: products.isEmpty ? 4 : products.length),
+    );
+  }
+
+  Widget _buildProductCard(
+    DocumentSnapshot product,
+    ThemeData theme,
+    bool isDarkMode, {
+    bool isHorizontal = false,
+  }) {
+    final productId = product.id;
+    final hasDiscount =
+        product.get('discountPrice') != null &&
+        product.get('discountPrice') < product.get('price');
+    final isSaved = _savedItems.contains(productId);
+    final images = List<String>.from(product.get('images') ?? []);
+    final firstImage = images.isNotEmpty ? images[0] : '';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ProductDetailsPage(productId: productId),
+          ),
+        );
+      },
+      child: Container(
+        width: isHorizontal ? 160 : null,
+        decoration: BoxDecoration(
+          color: isDarkMode ? Colors.grey[800] : Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            if (!isDarkMode)
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Stack(
               children: [
-                AspectRatio(
-                  aspectRatio: 1,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(12),
-                      ),
+                ClipRRect(
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                  child: AspectRatio(
+                    aspectRatio: 1,
+                    child: CachedNetworkImage(
+                      imageUrl: firstImage,
+                      fit: BoxFit.cover,
+                      placeholder:
+                          (context, url) => Container(
+                            color:
+                                isDarkMode
+                                    ? Colors.grey[700]
+                                    : Colors.grey[200],
+                          ),
+                      errorWidget:
+                          (context, url, error) => Container(
+                            color:
+                                isDarkMode
+                                    ? Colors.grey[700]
+                                    : Colors.grey[200],
+                            child: const Icon(Icons.error),
+                          ),
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        height: 16,
-                        color: Colors.white,
+                if (hasDiscount)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
                       ),
-                      const SizedBox(height: 8),
-                      Container(width: 100, height: 12, color: Colors.white),
-                      const SizedBox(height: 8),
-                      Container(width: 60, height: 16, color: Colors.white),
-                    ],
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFff914d),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${(((product.get('price') - product.get('discountPrice')) / product.get('price') * 100).toStringAsFixed(0))}% OFF',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    icon: Icon(
+                      isSaved ? Icons.favorite : Icons.favorite_border,
+                      color: isSaved ? Colors.red : Colors.white,
+                      size: 24,
+                    ),
+                    onPressed: () {
+                      _toggleSaveItem(productId);
+                    },
                   ),
                 ),
               ],
             ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildBottomNavBar(ThemeData theme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.bottomNavigationBarTheme.backgroundColor,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _buildNavItem(
-              icon: Icons.home_rounded,
-              label: 'Home',
-              index: 0,
-              isSelected: true,
-              onTap: () => widget.onTabChange(0),
-            ),
-            _buildNavItem(
-              icon: Icons.bookmark_rounded,
-              label: 'Saved',
-              index: 1,
-              isSelected: false,
-              onTap: () => widget.onTabChange(1),
-            ),
-            _buildNavItem(
-              icon: Icons.search_rounded,
-              label: 'Search',
-              index: 2,
-              isSelected: false,
-              onTap: () => widget.onTabChange(2),
-            ),
-            _buildNavItem(
-              icon: Icons.person_rounded,
-              label: 'Profile',
-              index: 3,
-              isSelected: false,
-              onTap: () => widget.onTabChange(3),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.get('name'),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: isDarkMode ? Colors.white : Colors.black,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    product.get('brandName'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: isDarkMode ? Colors.grey[400] : Colors.grey[600],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Text(
+                        '\$${product.get('discountPrice')?.toStringAsFixed(2) ?? product.get('price').toStringAsFixed(2)}',
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF004aad),
+                        ),
+                      ),
+                      if (hasDiscount)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            '\$${product.get('price').toStringAsFixed(2)}',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              decoration: TextDecoration.lineThrough,
+                              color:
+                                  isDarkMode
+                                      ? Colors.grey[500]
+                                      : Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -930,33 +917,139 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildNavItem({
-    required IconData icon,
-    required String label,
-    required int index,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            color: isSelected ? const Color(0xFF004aad) : Colors.grey,
-            size: 24,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: isSelected ? const Color(0xFF004aad) : Colors.grey,
-              fontSize: 12,
+  Widget _buildProductShimmer() {
+    return Shimmer.fromColors(
+      baseColor: Colors.grey[300]!,
+      highlightColor: Colors.grey[100]!,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            AspectRatio(
+              aspectRatio: 1,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(12),
+                  ),
+                ),
+              ),
             ),
-          ),
-        ],
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 16,
+                    color: Colors.white,
+                  ),
+                  const SizedBox(height: 8),
+                  Container(width: 100, height: 12, color: Colors.white),
+                  const SizedBox(height: 8),
+                  Container(width: 60, height: 16, color: Colors.white),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildProductsShimmer({bool isHorizontal = false}) {
+    return isHorizontal
+        ? ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: 4,
+          itemBuilder: (context, index) {
+            return Container(
+              width: 160,
+              margin: EdgeInsets.only(left: 16, right: index == 3 ? 16 : 0),
+              child: _buildProductShimmer(),
+            );
+          },
+        )
+        : MasonryGridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 2,
+          mainAxisSpacing: 16,
+          crossAxisSpacing: 16,
+          itemCount: 4,
+          itemBuilder: (context, index) {
+            return _buildProductShimmer();
+          },
+        );
+  }
+
+  Widget _buildBottomNavBar(ThemeData theme) {
+    return BottomNavigationBar(
+      type: BottomNavigationBarType.fixed,
+      currentIndex: 0,
+      onTap: widget.onTabChange,
+      selectedItemColor: const Color(0xFF004aad),
+      unselectedItemColor: Colors.grey,
+      items: const [
+        BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: 'Home'),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.bookmark_rounded),
+          label: 'Saved',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.search_rounded),
+          label: 'Search',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.shopping_cart_rounded),
+          label: 'Cart',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person_rounded),
+          label: 'Profile',
+        ),
+      ],
+    );
+  }
+}
+
+// Placeholder for category products page
+class CategoryProductsPage extends StatelessWidget {
+  final String categoryId;
+  final String categoryName;
+
+  const CategoryProductsPage({
+    super.key,
+    required this.categoryId,
+    required this.categoryName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(categoryName)),
+      body: Center(child: Text('Products for $categoryName')),
+    );
+  }
+}
+
+// Placeholder for product details page
+class ProductDetailsPage extends StatelessWidget {
+  final String productId;
+
+  const ProductDetailsPage({super.key, required this.productId});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(),
+      body: Center(child: Text('Product Details for $productId')),
     );
   }
 }
