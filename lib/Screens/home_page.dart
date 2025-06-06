@@ -9,7 +9,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 class HomePage extends StatefulWidget {
   final Function(int) onTabChange;
 
-  const HomePage({Key? key, required this.onTabChange}) : super(key: key);
+  const HomePage({super.key, required this.onTabChange});
 
   @override
   _HomePageState createState() => _HomePageState();
@@ -23,6 +23,7 @@ class _HomePageState extends State<HomePage> {
   String _userName = '';
   int _currentCarouselIndex = 0;
   late PageController _carouselController;
+  List<String> _savedItems = [];
 
   @override
   void initState() {
@@ -30,6 +31,9 @@ class _HomePageState extends State<HomePage> {
     _carouselController = PageController(initialPage: 0);
     _loadUserData();
     _loadCartCount();
+    _loadSavedItems();
+    // Auto-scroll carousel
+    _startCarouselAutoScroll();
   }
 
   @override
@@ -37,6 +41,20 @@ class _HomePageState extends State<HomePage> {
     _carouselController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _startCarouselAutoScroll() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (_carouselController.hasClients) {
+        final nextPage = _currentCarouselIndex + 1;
+        _carouselController.animateToPage(
+          nextPage,
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeInOut,
+        );
+        _startCarouselAutoScroll();
+      }
+    });
   }
 
   Future<void> _loadUserData() async {
@@ -69,6 +87,52 @@ class _HomePageState extends State<HomePage> {
       }
     } catch (e) {
       _showErrorToast('Failed to load cart items');
+    }
+  }
+
+  Future<void> _loadSavedItems() async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final doc =
+            await _firestore.collection('savedItems').doc(user.uid).get();
+        if (doc.exists) {
+          setState(() {
+            _savedItems = List<String>.from(doc.get('items') ?? []);
+          });
+        }
+      }
+    } catch (e) {
+      _showErrorToast('Failed to load saved items');
+    }
+  }
+
+  Future<void> _toggleSaveItem(String productId) async {
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final docRef = _firestore.collection('savedItems').doc(user.uid);
+
+        if (_savedItems.contains(productId)) {
+          await docRef.update({
+            'items': FieldValue.arrayRemove([productId]),
+          });
+          setState(() {
+            _savedItems.remove(productId);
+          });
+          _showSuccessToast('Item removed from saved');
+        } else {
+          await docRef.set({
+            'items': FieldValue.arrayUnion([productId]),
+          }, SetOptions(merge: true));
+          setState(() {
+            _savedItems.add(productId);
+          });
+          _showSuccessToast('Item saved for later');
+        }
+      }
+    } catch (e) {
+      _showErrorToast('Failed to update saved items');
     }
   }
 
@@ -114,7 +178,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ignore: unused_element
   void _showSuccessToast(String message) {
     toastification.show(
       context: context,
@@ -222,8 +285,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 onPressed: () {
-                  // Navigate to cart
-                  widget.onTabChange(3);
+                  widget.onTabChange(3); // Navigate to cart
                 },
               ),
               IconButton(
@@ -282,8 +344,8 @@ class _HomePageState extends State<HomePage> {
       children: [
         SizedBox(
           height: 180,
-          child: FutureBuilder<QuerySnapshot>(
-            future: _firestore.collection('carouselImages').get(),
+          child: StreamBuilder<QuerySnapshot>(
+            stream: _firestore.collection('carouselImages').snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return _buildCarouselShimmer();
@@ -350,8 +412,8 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
         const SizedBox(height: 12),
-        FutureBuilder<QuerySnapshot>(
-          future: _firestore.collection('carouselImages').get(),
+        StreamBuilder<QuerySnapshot>(
+          stream: _firestore.collection('carouselImages').snapshots(),
           builder: (context, snapshot) {
             if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
               return const SizedBox();
@@ -414,8 +476,8 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           SizedBox(
             height: 100,
-            child: FutureBuilder<QuerySnapshot>(
-              future: _firestore.collection('categories').get(),
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestore.collection('categories').snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return _buildCategoriesShimmer();
@@ -559,8 +621,8 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           const SizedBox(height: 16),
-          FutureBuilder<QuerySnapshot>(
-            future: _firestore.collection('products').limit(8).get(),
+          StreamBuilder<QuerySnapshot>(
+            stream: _firestore.collection('products').limit(8).snapshots(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return _buildProductsShimmer();
@@ -591,9 +653,11 @@ class _HomePageState extends State<HomePage> {
                 itemCount: snapshot.data!.docs.length,
                 itemBuilder: (context, index) {
                   final product = snapshot.data!.docs[index];
+                  final productId = product.id;
                   final hasDiscount =
                       product.get('discountPrice') != null &&
                       product.get('discountPrice') < product.get('price');
+                  final isSaved = _savedItems.contains(productId);
 
                   return GestureDetector(
                     onTap: () {
@@ -667,6 +731,22 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                   ),
                                 ),
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: IconButton(
+                                  icon: Icon(
+                                    isSaved
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: isSaved ? Colors.red : Colors.white,
+                                    size: 24,
+                                  ),
+                                  onPressed: () {
+                                    _toggleSaveItem(productId);
+                                  },
+                                ),
+                              ),
                             ],
                           ),
                           Padding(
