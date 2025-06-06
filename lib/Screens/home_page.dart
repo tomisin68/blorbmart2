@@ -6,7 +6,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:toastification/toastification.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
+// ignore: unused_import
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:pull_to_refresh/pull_to_refresh.dart';
 
 class HomePage extends StatefulWidget {
   final Function(int) onTabChange;
@@ -21,6 +23,8 @@ class _HomePageState extends State<HomePage> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _searchController = TextEditingController();
+  final RefreshController _refreshController = RefreshController();
+
   int _cartItemCount = 0;
   String _userName = '';
   int _currentCarouselIndex = 0;
@@ -31,20 +35,13 @@ class _HomePageState extends State<HomePage> {
   List<DocumentSnapshot> _categories = [];
   List<DocumentSnapshot> _products = [];
   List<DocumentSnapshot> _recentProducts = [];
-  List<DocumentSnapshot> _topSellers = [];
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
     _carouselController = PageController(initialPage: 0);
-    _loadUserData();
-    _loadCartCount();
-    _loadSavedItems();
-    _loadCarouselImages();
-    _loadCategories();
-    _loadProducts();
-    _loadRecentProducts();
-    _loadTopSellers();
+    _loadAllData();
   }
 
   @override
@@ -52,21 +49,43 @@ class _HomePageState extends State<HomePage> {
     _carouselController.dispose();
     _searchController.dispose();
     _carouselTimer?.cancel();
+    _refreshController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAllData() async {
+    setState(() => _isLoading = true);
+    try {
+      await Future.wait([
+        _loadUserData(),
+        _loadCartCount(),
+        _loadSavedItems(),
+        _loadCarouselImages(),
+        _loadCategories(),
+        _loadProducts(),
+        _loadRecentProducts(),
+      ]);
+    } catch (e) {
+      _showErrorToast('Failed to load data. Pull down to refresh.');
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   void _startCarouselAutoScroll() {
     _carouselTimer?.cancel();
-    _carouselTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      if (_carouselController.hasClients && _carouselImages.isNotEmpty) {
-        final nextPage = (_currentCarouselIndex + 1) % _carouselImages.length;
-        _carouselController.animateToPage(
-          nextPage,
-          duration: const Duration(milliseconds: 500),
-          curve: Curves.easeInOut,
-        );
-      }
-    });
+    if (_carouselImages.length > 1) {
+      _carouselTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+        if (_carouselController.hasClients) {
+          final nextPage = (_currentCarouselIndex + 1) % _carouselImages.length;
+          _carouselController.animateToPage(
+            nextPage,
+            duration: const Duration(milliseconds: 500),
+            curve: Curves.easeInOut,
+          );
+        }
+      });
+    }
   }
 
   Future<void> _loadCarouselImages() async {
@@ -76,11 +95,9 @@ class _HomePageState extends State<HomePage> {
         _carouselImages =
             snapshot.docs.map((doc) => doc.get('imageurl') as String).toList();
       });
-      if (_carouselImages.isNotEmpty) {
-        _startCarouselAutoScroll();
-      }
+      _startCarouselAutoScroll();
     } catch (e) {
-      _showErrorToast('Failed to load carousel images');
+      throw Exception('Failed to load carousel images');
     }
   }
 
@@ -91,7 +108,7 @@ class _HomePageState extends State<HomePage> {
         _categories = snapshot.docs;
       });
     } catch (e) {
-      _showErrorToast('Failed to load categories');
+      throw Exception('Failed to load categories');
     }
   }
 
@@ -102,7 +119,7 @@ class _HomePageState extends State<HomePage> {
         _products = snapshot.docs;
       });
     } catch (e) {
-      _showErrorToast('Failed to load products');
+      throw Exception('Failed to load products');
     }
   }
 
@@ -118,26 +135,7 @@ class _HomePageState extends State<HomePage> {
         _recentProducts = snapshot.docs;
       });
     } catch (e) {
-      _showErrorToast('Failed to load recent products');
-    }
-  }
-
-  Future<void> _loadTopSellers() async {
-    try {
-      final snapshot =
-          await _firestore
-              .collection('products')
-              .orderBy(
-                'stock',
-                descending: false,
-              ) // Assuming low stock means popular
-              .limit(4)
-              .get();
-      setState(() {
-        _topSellers = snapshot.docs;
-      });
-    } catch (e) {
-      _showErrorToast('Failed to load top sellers');
+      throw Exception('Failed to load recent products');
     }
   }
 
@@ -153,7 +151,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     } catch (e) {
-      _showErrorToast('Failed to load user data');
+      throw Exception('Failed to load user data');
     }
   }
 
@@ -170,7 +168,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     } catch (e) {
-      _showErrorToast('Failed to load cart items');
+      throw Exception('Failed to load cart items');
     }
   }
 
@@ -187,7 +185,7 @@ class _HomePageState extends State<HomePage> {
         }
       }
     } catch (e) {
-      _showErrorToast('Failed to load saved items');
+      throw Exception('Failed to load saved items');
     }
   }
 
@@ -197,26 +195,39 @@ class _HomePageState extends State<HomePage> {
       if (user != null) {
         final docRef = _firestore.collection('savedItems').doc(user.uid);
 
-        if (_savedItems.contains(productId)) {
-          await docRef.update({
-            'items': FieldValue.arrayRemove([productId]),
-          });
-          setState(() {
+        await _firestore.runTransaction((transaction) async {
+          final snapshot = await transaction.get(docRef);
+          final currentItems = List<String>.from(snapshot.get('items') ?? []);
+
+          if (currentItems.contains(productId)) {
+            currentItems.remove(productId);
+            _showSuccessToast('Item removed from saved');
+          } else {
+            currentItems.add(productId);
+            _showSuccessToast('Item saved for later');
+          }
+
+          transaction.set(docRef, {'items': currentItems});
+        });
+
+        setState(() {
+          if (_savedItems.contains(productId)) {
             _savedItems.remove(productId);
-          });
-          _showSuccessToast('Item removed from saved');
-        } else {
-          await docRef.set({
-            'items': FieldValue.arrayUnion([productId]),
-          }, SetOptions(merge: true));
-          setState(() {
+          } else {
             _savedItems.add(productId);
-          });
-          _showSuccessToast('Item saved for later');
-        }
+          }
+        });
       }
     } catch (e) {
-      _showErrorToast('Failed to update saved items');
+      _showErrorToast('Failed to update saved items. Please try again.');
+    }
+  }
+
+  void _handleSearch(String query) {
+    if (query.isNotEmpty) {
+      // Navigate to search results page
+      widget.onTabChange(2); // Assuming 2 is the search page index
+      // You can pass the query to the search page
     }
   }
 
@@ -293,54 +304,97 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _onRefresh() async {
+    try {
+      await _loadAllData();
+      _refreshController.refreshCompleted();
+    } catch (e) {
+      _refreshController.refreshFailed();
+      _showErrorToast('Refresh failed. Please try again.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
+    final size = MediaQuery.of(context).size;
+    final isMobile = size.width < 600;
 
     return Scaffold(
       backgroundColor: isDarkMode ? Colors.grey[900] : Colors.grey[50],
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            // App Bar
-            SliverToBoxAdapter(child: _buildAppBar(theme, isDarkMode)),
-            // Search Bar
-            SliverToBoxAdapter(child: _buildSearchBar(theme, isDarkMode)),
-            // Carousel Section
-            SliverToBoxAdapter(child: _buildCarouselSection(theme, isDarkMode)),
-            // Categories Section
-            SliverToBoxAdapter(
-              child: _buildCategoriesSection(theme, isDarkMode),
-            ),
-            // Recently Added Section
-            SliverToBoxAdapter(
-              child: _buildSectionTitle('Recently Added', theme, isDarkMode),
-            ),
-            SliverToBoxAdapter(
-              child: _buildHorizontalProducts(
-                _recentProducts,
-                theme,
-                isDarkMode,
+        child: SmartRefresher(
+          controller: _refreshController,
+          onRefresh: _onRefresh,
+          header: const ClassicHeader(
+            idleText: 'Pull down to refresh',
+            releaseText: 'Release to refresh',
+            refreshingText: 'Refreshing...',
+            completeText: 'Refresh complete',
+            failedText: 'Refresh failed',
+            textStyle: TextStyle(color: Colors.grey),
+          ),
+          child: CustomScrollView(
+            slivers: [
+              // App Bar
+              SliverToBoxAdapter(child: _buildAppBar(theme, isDarkMode)),
+              // Search Bar
+              SliverToBoxAdapter(child: _buildSearchBar(theme, isDarkMode)),
+              // Carousel Section
+              SliverToBoxAdapter(
+                child: _buildCarouselSection(theme, isDarkMode),
               ),
-            ),
-            // Top Sellers Section
-            SliverToBoxAdapter(
-              child: _buildSectionTitle('Top Sellers', theme, isDarkMode),
-            ),
-            SliverToBoxAdapter(
-              child: _buildHorizontalProducts(_topSellers, theme, isDarkMode),
-            ),
-            // Featured Products Section
-            SliverToBoxAdapter(
-              child: _buildSectionTitle('Featured Products', theme, isDarkMode),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              sliver: _buildProductsGrid(_products, theme, isDarkMode),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-          ],
+              // Categories Section
+              SliverToBoxAdapter(
+                child: _buildCategoriesSection(theme, isDarkMode),
+              ),
+              // Recently Added Section
+              SliverToBoxAdapter(
+                child: _buildSectionTitle('Recently Added', theme, isDarkMode),
+              ),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: isMobile ? 220 : 280,
+                  child:
+                      _isLoading || _recentProducts.isEmpty
+                          ? _buildHorizontalProductsShimmer(isMobile)
+                          : _buildHorizontalProducts(_recentProducts, isMobile),
+                ),
+              ),
+              // Featured Products Section
+              SliverToBoxAdapter(
+                child: _buildSectionTitle(
+                  'Featured Products',
+                  theme,
+                  isDarkMode,
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 16 : size.width * 0.1,
+                  vertical: 8,
+                ),
+                sliver:
+                    _isLoading || _products.isEmpty
+                        ? SliverGrid(
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) => _buildProductShimmer(isMobile),
+                            childCount: 4,
+                          ),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: isMobile ? 2 : 4,
+                                mainAxisSpacing: 16,
+                                crossAxisSpacing: 16,
+                                childAspectRatio: isMobile ? 0.7 : 0.8,
+                              ),
+                        )
+                        : _buildProductsGrid(_products, isMobile),
+              ),
+              const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: _buildBottomNavBar(theme),
@@ -364,7 +418,7 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 4),
               Text(
-                _userName.isNotEmpty ? _userName : 'Welcome',
+                _userName.isNotEmpty ? 'Hi, $_userName' : 'Welcome',
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: isDarkMode ? Colors.white : Colors.black,
@@ -387,18 +441,16 @@ class _HomePageState extends State<HomePage> {
                     color: isDarkMode ? Colors.white : Colors.black,
                   ),
                 ),
-                onPressed: () {
-                  widget.onTabChange(3); // Navigate to cart
-                },
+                onPressed: () => widget.onTabChange(3), // Navigate to cart page
               ),
               IconButton(
                 icon: Icon(
                   Icons.notifications_outlined,
                   color: isDarkMode ? Colors.white : Colors.black,
                 ),
-                onPressed: () {
-                  // Handle notification
-                },
+                onPressed:
+                    () =>
+                        widget.onTabChange(4), // Navigate to notifications page
               ),
             ],
           ),
@@ -434,9 +486,7 @@ class _HomePageState extends State<HomePage> {
           style: theme.textTheme.bodyMedium?.copyWith(
             color: isDarkMode ? Colors.white : Colors.black,
           ),
-          onSubmitted: (value) {
-            // Handle search
-          },
+          onSubmitted: _handleSearch,
         ),
       ),
     );
@@ -448,15 +498,13 @@ class _HomePageState extends State<HomePage> {
         SizedBox(
           height: 180,
           child:
-              _carouselImages.isEmpty
+              _isLoading || _carouselImages.isEmpty
                   ? _buildCarouselShimmer()
                   : PageView.builder(
                     controller: _carouselController,
                     itemCount: _carouselImages.length,
                     onPageChanged: (index) {
-                      setState(() {
-                        _currentCarouselIndex = index;
-                      });
+                      setState(() => _currentCarouselIndex = index);
                     },
                     itemBuilder: (context, index) {
                       return Padding(
@@ -479,7 +527,10 @@ class _HomePageState extends State<HomePage> {
                                       isDarkMode
                                           ? Colors.grey[800]
                                           : Colors.grey[200],
-                                  child: const Icon(Icons.error),
+                                  child: const Icon(
+                                    Icons.error,
+                                    color: Colors.grey,
+                                  ),
                                 ),
                           ),
                         ),
@@ -488,7 +539,7 @@ class _HomePageState extends State<HomePage> {
                   ),
         ),
         const SizedBox(height: 12),
-        _carouselImages.isEmpty
+        _isLoading || _carouselImages.isEmpty
             ? const SizedBox()
             : Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -548,12 +599,10 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               TextButton(
-                onPressed: () {
-                  // Navigate to all categories page
-                  widget.onTabChange(
-                    4,
-                  ); // Assuming 4 is the categories page index
-                },
+                onPressed:
+                    () => widget.onTabChange(
+                      5,
+                    ), // Navigate to all categories page
                 child: Text(
                   'See All',
                   style: theme.textTheme.bodyMedium?.copyWith(
@@ -567,7 +616,7 @@ class _HomePageState extends State<HomePage> {
           SizedBox(
             height: 100,
             child:
-                _categories.isEmpty
+                _isLoading || _categories.isEmpty
                     ? _buildCategoriesShimmer()
                     : ListView.builder(
                       scrollDirection: Axis.horizontal,
@@ -623,7 +672,10 @@ class _HomePageState extends State<HomePage> {
                                                 isDarkMode
                                                     ? Colors.grey[800]
                                                     : Colors.grey[200],
-                                            child: const Icon(Icons.error),
+                                            child: const Icon(
+                                              Icons.error,
+                                              color: Colors.grey,
+                                            ),
                                           ),
                                     ),
                                   ),
@@ -703,60 +755,63 @@ class _HomePageState extends State<HomePage> {
 
   Widget _buildHorizontalProducts(
     List<DocumentSnapshot> products,
-    ThemeData theme,
-    bool isDarkMode,
+    bool isMobile,
   ) {
-    return SizedBox(
-      height: 220,
-      child:
-          products.isEmpty
-              ? _buildProductsShimmer(isHorizontal: true)
-              : ListView.builder(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 16,
-                ),
-                itemCount: products.length,
-                itemBuilder: (context, index) {
-                  final product = products[index];
-                  return _buildProductCard(
-                    product,
-                    theme,
-                    isDarkMode,
-                    isHorizontal: true,
-                  );
-                },
-              ),
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: isMobile ? 8 : 16,
+      ),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        return Container(
+          width: isMobile ? 160 : 200,
+          margin: EdgeInsets.only(
+            right: index == products.length - 1 ? 16 : 16,
+          ),
+          child: _buildProductCard(products[index], isMobile),
+        );
+      },
+    );
+  }
+
+  Widget _buildHorizontalProductsShimmer(bool isMobile) {
+    return ListView.builder(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: 4,
+      itemBuilder: (context, index) {
+        return Container(
+          width: isMobile ? 160 : 200,
+          margin: EdgeInsets.only(right: index == 3 ? 16 : 16),
+          child: _buildProductShimmer(isMobile),
+        );
+      },
     );
   }
 
   SliverGrid _buildProductsGrid(
     List<DocumentSnapshot> products,
-    ThemeData theme,
-    bool isDarkMode,
+    bool isMobile,
   ) {
     return SliverGrid(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: isMobile ? 2 : 4,
         mainAxisSpacing: 16,
         crossAxisSpacing: 16,
-        childAspectRatio: 0.7,
+        childAspectRatio: isMobile ? 0.7 : 0.8,
       ),
-      delegate: SliverChildBuilderDelegate((context, index) {
-        return products.isEmpty
-            ? _buildProductShimmer()
-            : _buildProductCard(products[index], theme, isDarkMode);
-      }, childCount: products.isEmpty ? 4 : products.length),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) => _buildProductCard(products[index], isMobile),
+        childCount: products.length,
+      ),
     );
   }
 
-  Widget _buildProductCard(
-    DocumentSnapshot product,
-    ThemeData theme,
-    bool isDarkMode, {
-    bool isHorizontal = false,
-  }) {
+  Widget _buildProductCard(DocumentSnapshot product, bool isMobile) {
+    final theme = Theme.of(context);
+    final isDarkMode = theme.brightness == Brightness.dark;
     final productId = product.id;
     final hasDiscount =
         product.get('discountPrice') != null &&
@@ -765,32 +820,23 @@ class _HomePageState extends State<HomePage> {
     final images = List<String>.from(product.get('images') ?? []);
     final firstImage = images.isNotEmpty ? images[0] : '';
 
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ProductDetailsPage(productId: productId),
-          ),
-        );
-      },
-      child: Container(
-        width: isHorizontal ? 160 : null,
-        decoration: BoxDecoration(
-          color: isDarkMode ? Colors.grey[800] : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            if (!isDarkMode)
-              BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-          ],
-        ),
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ProductDetailsPage(productId: productId),
+            ),
+          );
+        },
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Product Image
             Stack(
               children: [
                 ClipRRect(
@@ -815,7 +861,7 @@ class _HomePageState extends State<HomePage> {
                                 isDarkMode
                                     ? Colors.grey[700]
                                     : Colors.grey[200],
-                            child: const Icon(Icons.error),
+                            child: const Icon(Icons.error, color: Colors.grey),
                           ),
                     ),
                   ),
@@ -852,13 +898,12 @@ class _HomePageState extends State<HomePage> {
                       color: isSaved ? Colors.red : Colors.white,
                       size: 24,
                     ),
-                    onPressed: () {
-                      _toggleSaveItem(productId);
-                    },
+                    onPressed: () => _toggleSaveItem(productId),
                   ),
                 ),
               ],
             ),
+            // Product Details
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
@@ -917,15 +962,13 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildProductShimmer() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
+  Widget _buildProductShimmer(bool isMobile) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -963,37 +1006,11 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildProductsShimmer({bool isHorizontal = false}) {
-    return isHorizontal
-        ? ListView.builder(
-          scrollDirection: Axis.horizontal,
-          itemCount: 4,
-          itemBuilder: (context, index) {
-            return Container(
-              width: 160,
-              margin: EdgeInsets.only(left: 16, right: index == 3 ? 16 : 0),
-              child: _buildProductShimmer(),
-            );
-          },
-        )
-        : MasonryGridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 16,
-          crossAxisSpacing: 16,
-          itemCount: 4,
-          itemBuilder: (context, index) {
-            return _buildProductShimmer();
-          },
-        );
-  }
-
   Widget _buildBottomNavBar(ThemeData theme) {
     return BottomNavigationBar(
       type: BottomNavigationBarType.fixed,
       currentIndex: 0,
-      onTap: widget.onTabChange,
+      onTap: (index) => widget.onTabChange(index),
       selectedItemColor: const Color(0xFF004aad),
       unselectedItemColor: Colors.grey,
       items: const [
@@ -1009,6 +1026,10 @@ class _HomePageState extends State<HomePage> {
         BottomNavigationBarItem(
           icon: Icon(Icons.shopping_cart_rounded),
           label: 'Cart',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.notifications_rounded),
+          label: 'Notifications',
         ),
         BottomNavigationBarItem(
           icon: Icon(Icons.person_rounded),
